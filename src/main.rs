@@ -13,9 +13,16 @@ fn main() {
 
     let mut chunk = Chunk::default();
 
-    chunk.push(ByteCode::RETURN);
+    chunk.push(ByteCode::Return, 0);
 
     let idx = chunk.push_constant(1.0);
-    chunk.push(ByteCode::CONSTANT(idx as u8));
+    chunk.push(ByteCode::Constant(idx as u8), 0);
+
+    let idx = chunk.push_constant(2.0);
+    chunk.push(ByteCode::ConstantLong(idx as u32), 2);
+
+    println!("Line of instruction 0: {:?}", chunk.get_line(0));
+
+    // TODO: Print line numbers for instructions
     chunk.disassemble();
 }

@@ -8,6 +8,13 @@ pub enum ByteCode {
     Return = 0,
     Constant(u8) = 1,
     ConstantLong(u32) = 2,
+
+    // Arith
+    Negate = 0x10,
+    Add,
+    Sub,
+    Mul,
+    Div,
 }
 
 #[derive(Debug, Default)]
@@ -20,7 +27,7 @@ pub struct Chunk {
 
 #[derive(Debug)]
 pub struct ChunkIterator<'a> {
-    ptr: usize,
+    pub ptr: usize,
     inner: &'a Chunk,
 }
 
@@ -66,6 +73,10 @@ impl Chunk {
         self.constants.len() - 1
     }
 
+    pub fn get_constant(&self, idx: usize) -> Value {
+        self.constants[idx]
+    }
+
     pub fn disassemble(&self) {
         println!("== CONSTANTS ==");
         self.constants
@@ -90,12 +101,17 @@ impl Chunk {
     pub fn push(&mut self, bytecode: ByteCode, line: usize) {
         let offset = self.bytecode.len();
         match bytecode {
-            ByteCode::Return => self.push_raw_slice(&[0]),
+            ByteCode::Return => self.push_raw(0),
             ByteCode::Constant(index) => self.push_raw_slice(&[1, index]),
             ByteCode::ConstantLong(index) => {
                 self.push_raw(2);
                 self.push_raw_slice(&index.to_le_bytes());
             }
+            ByteCode::Negate => self.push_raw(0x10),
+            ByteCode::Add => self.push_raw(0x11),
+            ByteCode::Sub => self.push_raw(0x12),
+            ByteCode::Mul => self.push_raw(0x13),
+            ByteCode::Div => self.push_raw(0x14),
         }
         self.extend_line_info(line, offset);
     }
@@ -132,6 +148,11 @@ impl<'a> Iterator for ChunkIterator<'a> {
                     )),
                 ))
             }
+            0x10 => Some((opcode_ptr, ByteCode::Negate)),
+            0x11 => Some((opcode_ptr, ByteCode::Add)),
+            0x12 => Some((opcode_ptr, ByteCode::Sub)),
+            0x13 => Some((opcode_ptr, ByteCode::Mul)),
+            0x14 => Some((opcode_ptr, ByteCode::Div)),
             _ => None,
         }
     }

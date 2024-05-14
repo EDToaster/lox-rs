@@ -1,11 +1,12 @@
 mod chunk;
 mod value;
+mod vm;
 
 use std::env;
 
 use chunk::Chunk;
 
-use crate::chunk::ByteCode;
+use crate::{chunk::ByteCode, vm::interpret};
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -13,16 +14,26 @@ fn main() {
 
     let mut chunk = Chunk::default();
 
-    chunk.push(ByteCode::Return, 0);
-
-    let idx = chunk.push_constant(1.0);
+    let idx = chunk.push_constant(1.2);
     chunk.push(ByteCode::Constant(idx as u8), 0);
 
-    let idx = chunk.push_constant(2.0);
-    chunk.push(ByteCode::ConstantLong(idx as u32), 2);
+    let idx = chunk.push_constant(3.4);
+    chunk.push(ByteCode::Constant(idx as u8), 0);
+
+    chunk.push(ByteCode::Add, 0);
+
+    let idx = chunk.push_constant(5.6);
+    chunk.push(ByteCode::Constant(idx as u8), 0);
+
+    chunk.push(ByteCode::Div, 0);
+    chunk.push(ByteCode::Negate, 0);
 
     println!("Line of instruction 0: {:?}", chunk.get_line(0));
 
     // TODO: Print line numbers for instructions
     chunk.disassemble();
+
+    // Run the VM
+    let res = interpret(&chunk);
+    println!("{res:?}");
 }

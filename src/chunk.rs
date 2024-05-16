@@ -1,5 +1,7 @@
 use std::ops::RangeInclusive;
 
+use itertools::Itertools;
+
 use crate::value::Value;
 
 #[repr(u8)]
@@ -17,12 +19,30 @@ pub enum ByteCode {
     Div,
 }
 
-#[derive(Debug, Default)]
+impl ByteCode {
+    pub fn from_constant_index(index: u32) -> ByteCode {
+        u8::try_from(index)
+            .map(|idx| Self::Constant(idx))
+            .unwrap_or(Self::ConstantLong(index))
+    }
+}
+
+#[derive(Debug)]
 pub struct Chunk {
     bytecode: Vec<u8>,
     constants: Vec<Value>,
-    // Debug info
-    line_info: Vec<(usize, RangeInclusive<usize>)>,
+    // Vec of line number to start
+    line_info: Vec<(usize, usize)>,
+}
+
+impl Default for Chunk {
+    fn default() -> Self {
+        Chunk {
+            bytecode: vec![],
+            constants: vec![],
+            line_info: vec![(0, 0)],
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -48,33 +68,30 @@ impl Chunk {
 
     /// Extend line_info to the current offset
     fn extend_line_info(&mut self, line: usize, offset: usize) {
-        if self.line_info.is_empty() {
-            self.line_info.push((line, offset..=offset));
-            return;
-        }
+        // unwrap since the vec is always non-empty
+        let &(last_line, _) = self.line_info.last().unwrap();
 
-        let last = self.line_info.last_mut().unwrap();
-        if last.0 == line {
-            last.1 = last.1.start().to_owned()..=offset;
-        } else {
-            self.line_info.push((line, offset..=offset));
+        if last_line != line {
+            self.line_info.push((line, offset));
         }
     }
 
     pub fn get_line(&self, offset: usize) -> Option<usize> {
         self.line_info
             .iter()
-            .find(|(_, o)| o.contains(&offset))
-            .map(|p| p.0)
+            .take_while_ref(|(_, o)| o <= &offset)
+            .last()
+            .map(|l| l.1)
     }
 
-    pub fn push_constant(&mut self, value: Value) -> usize {
+    pub fn push_constant(&mut self, value: Value) -> u32 {
         self.constants.push(value);
-        self.constants.len() - 1
+        // TODO, do safe casting
+        (self.constants.len() as u32) - 1
     }
 
-    pub fn get_constant(&self, idx: usize) -> Value {
-        self.constants[idx]
+    pub fn get_constant(&self, idx: u32) -> Value {
+        self.constants[idx as usize]
     }
 
     pub fn disassemble(&self) {

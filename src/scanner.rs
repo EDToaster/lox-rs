@@ -117,7 +117,7 @@ impl<'a> Iterator for TokenScanner<'a> {
                     self.make_token(t)
                 }
                 '*' => self.make_token(TokenType::Star),
-                _ => return None,
+                _ => self.make_token(TokenType::Error),
             };
             return Some(tok);
         }
@@ -222,14 +222,14 @@ impl<'a> TokenScanner<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Token<'a> {
     pub lexeme: &'a str,
     pub ttype: TokenType,
     pub line: usize,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum TokenType {
     // One char
     LParen,

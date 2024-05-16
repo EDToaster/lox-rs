@@ -5,11 +5,11 @@ use crate::{
 
 #[derive(Debug, Clone, Copy)]
 pub enum InterpretError {
-    COMPILE,
-    RUNTIME,
+    Compiler,
+    Runtime,
 }
 
-struct VM<'a> {
+pub struct VM<'a> {
     pub chunk: &'a Chunk,
     pub stack: Vec<Value>,
 }
@@ -33,27 +33,27 @@ impl<'a> VM<'a> {
                 ByteCode::Constant(idx) => vm.stack.push(chunk.get_constant(idx as usize)),
                 ByteCode::ConstantLong(idx) => vm.stack.push(chunk.get_constant(idx as usize)),
                 ByteCode::Negate => {
-                    let val = vm.stack.pop().ok_or(InterpretError::RUNTIME)?;
+                    let val = vm.stack.pop().ok_or(InterpretError::Runtime)?;
                     vm.stack.push(-val);
                 }
                 ByteCode::Add => {
-                    let r = vm.stack.pop().ok_or(InterpretError::RUNTIME)?;
-                    let l = vm.stack.pop().ok_or(InterpretError::RUNTIME)?;
+                    let r = vm.stack.pop().ok_or(InterpretError::Runtime)?;
+                    let l = vm.stack.pop().ok_or(InterpretError::Runtime)?;
                     vm.stack.push(l + r);
                 }
                 ByteCode::Sub => {
-                    let r = vm.stack.pop().ok_or(InterpretError::RUNTIME)?;
-                    let l = vm.stack.pop().ok_or(InterpretError::RUNTIME)?;
+                    let r = vm.stack.pop().ok_or(InterpretError::Runtime)?;
+                    let l = vm.stack.pop().ok_or(InterpretError::Runtime)?;
                     vm.stack.push(l - r);
                 }
                 ByteCode::Mul => {
-                    let r = vm.stack.pop().ok_or(InterpretError::RUNTIME)?;
-                    let l = vm.stack.pop().ok_or(InterpretError::RUNTIME)?;
+                    let r = vm.stack.pop().ok_or(InterpretError::Runtime)?;
+                    let l = vm.stack.pop().ok_or(InterpretError::Runtime)?;
                     vm.stack.push(l * r);
                 }
                 ByteCode::Div => {
-                    let r = vm.stack.pop().ok_or(InterpretError::RUNTIME)?;
-                    let l = vm.stack.pop().ok_or(InterpretError::RUNTIME)?;
+                    let r = vm.stack.pop().ok_or(InterpretError::Runtime)?;
+                    let l = vm.stack.pop().ok_or(InterpretError::Runtime)?;
                     vm.stack.push(l / r);
                 }
             }

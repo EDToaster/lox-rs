@@ -2,6 +2,7 @@ mod chunk;
 mod compiler;
 mod pipeline;
 mod scanner;
+mod util;
 mod value;
 mod vm;
 

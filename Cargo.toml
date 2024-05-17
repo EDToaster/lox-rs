@@ -6,3 +6,6 @@ edition = "2021"
 [dependencies]
 unicode-segmentation = "1.10.1"
 itertools = "0.12.1"
+
+num-derive = "0.4.2"
+num-traits = "0.2.19"

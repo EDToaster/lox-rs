@@ -1,7 +1,1 @@
-@@* // comment* * 
-/ ()
-2.3//
-! != ! = == < <= > >= "hello 
-
-world!"
-hello world class and or
+!(5 - 4 > 3 * 2 == !nil)

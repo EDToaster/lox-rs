@@ -1,6 +1,5 @@
-use std::ops::RangeInclusive;
-
 use itertools::Itertools;
+use num_traits::ToPrimitive;
 
 use crate::value::Value;
 
@@ -11,12 +10,23 @@ pub enum ByteCode {
     Constant(u8) = 1,
     ConstantLong(u32) = 2,
 
+    // Literals
+    Nil = 3,
+    True = 4,
+    False = 5,
+
     // Arith
     Negate = 0x10,
     Add,
     Sub,
     Mul,
     Div,
+
+    // Bool
+    Not = 0x20,
+    Eq,
+    Gt,
+    Lt,
 }
 
 impl ByteCode {
@@ -76,12 +86,13 @@ impl Chunk {
         }
     }
 
-    pub fn get_line(&self, offset: usize) -> Option<usize> {
+    pub fn get_line(&self, offset: usize) -> usize {
         self.line_info
             .iter()
             .take_while_ref(|(_, o)| o <= &offset)
             .last()
             .map(|l| l.1)
+            .unwrap_or(0)
     }
 
     pub fn push_constant(&mut self, value: Value) -> u32 {
@@ -116,19 +127,28 @@ impl Chunk {
 
     /// return the offset at the start of the encoded instruction
     pub fn push(&mut self, bytecode: ByteCode, line: usize) {
+        use ByteCode::*;
         let offset = self.bytecode.len();
         match bytecode {
-            ByteCode::Return => self.push_raw(0),
-            ByteCode::Constant(index) => self.push_raw_slice(&[1, index]),
-            ByteCode::ConstantLong(index) => {
+            Return => self.push_raw(0),
+            Constant(index) => self.push_raw_slice(&[1, index]),
+            ConstantLong(index) => {
                 self.push_raw(2);
                 self.push_raw_slice(&index.to_le_bytes());
             }
-            ByteCode::Negate => self.push_raw(0x10),
-            ByteCode::Add => self.push_raw(0x11),
-            ByteCode::Sub => self.push_raw(0x12),
-            ByteCode::Mul => self.push_raw(0x13),
-            ByteCode::Div => self.push_raw(0x14),
+            Nil => self.push_raw(3),
+            True => self.push_raw(4),
+            False => self.push_raw(5),
+            Negate => self.push_raw(0x10),
+            Add => self.push_raw(0x11),
+            Sub => self.push_raw(0x12),
+            Mul => self.push_raw(0x13),
+            Div => self.push_raw(0x14),
+
+            Not => self.push_raw(0x20),
+            Eq => self.push_raw(0x21),
+            Gt => self.push_raw(0x22),
+            Lt => self.push_raw(0x23),
         }
         self.extend_line_info(line, offset);
     }
@@ -165,11 +185,18 @@ impl<'a> Iterator for ChunkIterator<'a> {
                     )),
                 ))
             }
+            3 => Some((opcode_ptr, ByteCode::Nil)),
+            4 => Some((opcode_ptr, ByteCode::True)),
+            5 => Some((opcode_ptr, ByteCode::False)),
             0x10 => Some((opcode_ptr, ByteCode::Negate)),
             0x11 => Some((opcode_ptr, ByteCode::Add)),
             0x12 => Some((opcode_ptr, ByteCode::Sub)),
             0x13 => Some((opcode_ptr, ByteCode::Mul)),
             0x14 => Some((opcode_ptr, ByteCode::Div)),
+            0x20 => Some((opcode_ptr, ByteCode::Not)),
+            0x21 => Some((opcode_ptr, ByteCode::Eq)),
+            0x22 => Some((opcode_ptr, ByteCode::Gt)),
+            0x23 => Some((opcode_ptr, ByteCode::Lt)),
             _ => None,
         }
     }

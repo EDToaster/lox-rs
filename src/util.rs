@@ -1,10 +1,12 @@
+use std::iter::Peekable;
+
 #[derive(Clone)]
 pub struct PrevPeekable<I>
 where
     I: Iterator,
     <I as Iterator>::Item: Clone,
 {
-    inner: I,
+    inner: Peekable<I>,
     previous: Option<I::Item>,
 }
 
@@ -15,13 +17,17 @@ where
 {
     pub fn from(inner: I) -> PrevPeekable<I> {
         PrevPeekable {
-            inner,
+            inner: inner.peekable(),
             previous: None,
         }
     }
 
     pub fn prev_unwrap(&self) -> I::Item {
         self.previous.clone().unwrap()
+    }
+
+    pub fn peek(&mut self) -> Option<&I::Item> {
+        self.inner.peek()
     }
 }
 

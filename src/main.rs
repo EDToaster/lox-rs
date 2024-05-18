@@ -4,6 +4,7 @@ extern crate num_traits;
 
 mod chunk;
 mod compiler;
+mod object;
 mod pipeline;
 mod scanner;
 mod util;

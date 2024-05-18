@@ -3,6 +3,7 @@ pub enum Value {
     Nil,
     Bool(bool),
     Number(f64),
+    Obj,
 }
 
 impl Value {
@@ -10,7 +11,7 @@ impl Value {
         match self {
             Value::Nil => false,
             Value::Bool(b) => b,
-            Value::Number(_) => true,
+            _ => true,
         }
     }
 }

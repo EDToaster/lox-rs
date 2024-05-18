@@ -102,7 +102,8 @@ impl Chunk {
     }
 
     pub fn get_constant(&self, idx: u32) -> Value {
-        self.constants[idx as usize]
+        // TODO: remove clone since we wouldn't want to clone a str
+        self.constants[idx as usize].clone()
     }
 
     pub fn disassemble(&self) {

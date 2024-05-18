@@ -53,7 +53,7 @@ impl Precedence {
             TokenType::Less => Precedence::Comparison,
             TokenType::LessEqual => Precedence::Comparison,
             TokenType::Ident => Precedence::None,
-            TokenType::String => Precedence::None,
+            TokenType::Str => Precedence::None,
             TokenType::Number => Precedence::None,
             TokenType::And => Precedence::None,
             TokenType::Class => Precedence::None,
@@ -156,6 +156,7 @@ impl<'a> Compiler<'a> {
                 LParen => self.compile_grouping(),
                 Minus => self.compile_unary(),
                 Number => self.compile_number(),
+                Str => self.compile_string(),
                 False | True | Nil => self.compile_literal(),
                 Bang => self.compile_unary(),
                 _ => {
@@ -200,6 +201,16 @@ impl<'a> Compiler<'a> {
     fn compile_number(&mut self) -> Result<(), InterpretError> {
         let token = self.scanner.prev_unwrap();
         self.emit_constant(&token, Value::Number(token.lexeme.parse().unwrap()));
+        Ok(())
+    }
+
+    fn compile_string(&mut self) -> Result<(), InterpretError> {
+        let token = self.scanner.prev_unwrap();
+        let strlen = token.lexeme.len();
+        self.emit_constant(
+            &token,
+            Value::Str(token.lexeme[1..strlen - 1].to_owned().into_boxed_str()),
+        );
         Ok(())
     }
 

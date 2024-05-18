@@ -161,7 +161,7 @@ impl<'a> TokenScanner<'a> {
     fn take_string(&mut self) -> Token<'a> {
         self.chars.take_while_ref(|&c| c != '"').count();
         self.chars.next();
-        self.make_token(TokenType::String)
+        self.make_token(TokenType::Str)
     }
 
     /// Continue taking numeric digits assuming the first digit is already consumed
@@ -256,7 +256,7 @@ pub enum TokenType {
 
     // Literals
     Ident,
-    String,
+    Str,
     Number,
 
     // Keywords

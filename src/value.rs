@@ -1,9 +1,10 @@
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Value {
     Nil,
     Bool(bool),
     Number(f64),
-    Obj,
+    // TODO: String interning
+    Str(Box<str>),
 }
 
 impl Value {

@@ -58,24 +58,23 @@ impl<'a> VM<'a> {
                 Add | Sub | Mul | Div => {
                     let r = vm.stack.pop().ok_or(InterpretError::Runtime)?;
                     let l = vm.stack.pop().ok_or(InterpretError::Runtime)?;
-                    let (l, r) = match (l, r) {
-                        (Value::Number(l), Value::Number(r)) => (l, r),
-                        _ => {
+
+                    let res = match (bytecode, l, r) {
+                        (Add, Value::Number(l), Value::Number(r)) => Value::Number(l + r),
+                        (Sub, Value::Number(l), Value::Number(r)) => Value::Number(l - r),
+                        (Mul, Value::Number(l), Value::Number(r)) => Value::Number(l * r),
+                        (Div, Value::Number(l), Value::Number(r)) => Value::Number(l / r),
+                        (Add, Value::Str(l), Value::Str(r)) => Value::Str(format!("{l}{r}").into_boxed_str()),
+                        (Mul, Value::Str(l), Value::Number(r)) if r.fract() == 0.0 => Value::Str(l.repeat(r as usize).into_boxed_str()),
+                        (_, l, r) => 
                             return report_error(
                                 chunk.get_line(offset),
                                 &bytecode,
-                                &format!("Operands must be numbers, found {l:?}, {r:?}"),
+                                &format!("Unsupported operands for operation {bytecode:?}, found {l:?}, {r:?}"),
                             )
-                        }
                     };
-                    let res = match bytecode {
-                        Add => l + r,
-                        Sub => l - r,
-                        Mul => l * r,
-                        Div => l / r,
-                        _ => unreachable!(),
-                    };
-                    vm.stack.push(Value::Number(res));
+
+                    vm.stack.push(res);
                 }
                 Not => {
                     let val = !vm.stack.pop().ok_or(InterpretError::Runtime)?.is_truthy();
@@ -95,7 +94,7 @@ impl<'a> VM<'a> {
                             Lt => l < r,
                             _ => unreachable!(),
                         },
-                        _ => {
+                        (l, r) => {
                             return report_error(
                                 chunk.get_line(offset),
                                 &bytecode,

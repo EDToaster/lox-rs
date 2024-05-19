@@ -114,11 +114,11 @@ impl<'a> VM<'a> {
                     println!("{}", vm.stack.pop().ok_or(InterpretError::Runtime)?);
                 }
                 SetGlobal(slot) => {
-                    let val = vm.stack.pop().ok_or(InterpretError::Runtime)?;
+                    let val = vm.stack.last().ok_or(InterpretError::Runtime)?.clone();
                     vm.globals[slot as usize] = val;
                 }
                 GetGlobal(slot) => {
-                    let val = vm.stack[slot as usize].clone();
+                    let val = vm.globals[slot as usize].clone();
                     vm.stack.push(val);
                 }
                 Pop => {

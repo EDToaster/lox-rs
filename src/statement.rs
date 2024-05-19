@@ -12,15 +12,15 @@ impl<'a> Compiler<'a> {
     //statement      → exprStmt
     //               | printStmt ;
 
-    pub fn compile_declaration(&mut self) -> CompilerResult<()> {
+    pub fn compile_decl(&mut self) -> CompilerResult<()> {
         if let Some(_) = self.scanner.advance_if_match(TokenType::Var) {
-            self.compile_var()
+            self.compile_var_decl()
         } else {
             self.compile_statement()
         }
     }
 
-    fn compile_var(&mut self) -> CompilerResult<()> {
+    fn compile_var_decl(&mut self) -> CompilerResult<()> {
         let tok = self
             .scanner
             .consume_token(TokenType::Ident, "Expected identifier after 'var'")?;
@@ -45,6 +45,7 @@ impl<'a> Compiler<'a> {
             .consume_token(TokenType::Semi, "Expected ';' after variable declaration")?;
 
         self.chunk.push(ByteCode::SetGlobal(slot), tok.line);
+        self.chunk.push(ByteCode::Pop, tok.line);
 
         Ok(())
     }

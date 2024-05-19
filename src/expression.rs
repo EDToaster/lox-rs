@@ -1,11 +1,9 @@
+use itertools::Itertools;
+
 use crate::{
-    chunk::{ByteCode, Chunk},
-    compiler::{
-        report_error, report_error_eof, Compiler, CompilerResult, ErrorIgnoreTokenScanner,
-        Precedence,
-    },
-    scanner::{Token, TokenScanner, TokenType},
-    util::PrevPeekable,
+    chunk::ByteCode,
+    compiler::{report_error, report_error_eof, Compiler, CompilerResult, Precedence},
+    scanner::{Token, TokenType},
     value::Value,
     vm::InterpretError,
 };
@@ -19,6 +17,9 @@ impl<'a> Compiler<'a> {
 
     fn compile_precedence(&mut self, precedence: Precedence) -> CompilerResult<()> {
         use TokenType::*;
+
+        let can_assign = precedence <= Precedence::Assignment;
+
         // Compile token as prefix
         match self.scanner.next() {
             Some(tok) => match tok.ttype {
@@ -28,6 +29,7 @@ impl<'a> Compiler<'a> {
                 Str => self.compile_string(),
                 False | True | Nil => self.compile_literal(),
                 Bang => self.compile_unary(),
+                Ident => self.compile_var(can_assign),
                 _ => {
                     report_error(&tok, "Expected expression here");
                     Err(InterpretError::Compiler)
@@ -57,6 +59,13 @@ impl<'a> Compiler<'a> {
                     Err(InterpretError::Compiler)
                 }
             }?;
+        }
+
+        if can_assign {
+            if let Some(t) = self.scanner.advance_if_match(TokenType::Equal) {
+                report_error(&t, "Left hand side of the assignment is not assignable");
+                return Err(InterpretError::Compiler);
+            }
         }
 
         Ok(())
@@ -89,6 +98,24 @@ impl<'a> Compiler<'a> {
             False => self.chunk.push(ByteCode::False, token.line),
             _ => unreachable!(),
         }
+        Ok(())
+    }
+
+    fn compile_var(&mut self, can_assign: bool) -> CompilerResult<()> {
+        self.compile_named_var(&self.scanner.prev_unwrap(), can_assign)
+    }
+
+    // right now we assume these are all global
+    fn compile_named_var(&mut self, name: &Token<'a>, can_assign: bool) -> CompilerResult<()> {
+        let slot = self.global_bindings.use_binding(name.lexeme);
+
+        if can_assign && self.scanner.advance_if_match(TokenType::Equal).is_some() {
+            self.compile_expression()?;
+            self.chunk.push(ByteCode::SetGlobal(slot), name.line);
+        } else {
+            self.chunk.push(ByteCode::GetGlobal(slot), name.line);
+        }
+
         Ok(())
     }
 

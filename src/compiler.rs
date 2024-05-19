@@ -192,15 +192,24 @@ impl<'a> Compiler<'a> {
         // self.compile_expression()?;
 
         while let Some(_) = self.scanner.peek() {
-            self.compile_declaration()?;
+            self.compile_decl()?;
         }
 
         self.chunk.disassemble();
 
         if !self.global_bindings.undeclared_globals.is_empty() {
-            report_error_eof("{num_slots} global bindings were not declared, but are used");
+            report_error_eof(&format!(
+                "The following global bindings were not declared but were used: {}",
+                self.global_bindings
+                    .undeclared_globals
+                    .iter()
+                    .map(|n| format!("'{n}'"))
+                    .join(", ")
+            ));
+
             return Err(InterpretError::Compiler);
         }
+
         // TODO: safe convert
         self.chunk.global_slots = self.global_bindings.global_slots.keys().count() as u32;
         if let Some(t) = self.scanner.peek() {

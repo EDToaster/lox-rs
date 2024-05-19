@@ -1,6 +1,5 @@
-print "Hello " + "world";
-print 1;
-var i = "hello " + "world";
-var j;
-var k;
-var l = "hi";
+var breakfast = "beignets";
+var beverage = "cafe au lait";
+breakfast = "beignets with " + beverage;
+
+print breakfast;

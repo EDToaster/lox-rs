@@ -1,17 +1,18 @@
+use std::collections::{BTreeMap, HashSet};
+
 use itertools::Itertools;
 use num_traits::FromPrimitive;
 
 use crate::{
-    chunk::{ByteCode, Chunk},
+    chunk::Chunk,
     scanner::{Token, TokenScanner, TokenType},
     util::PrevPeekable,
-    value::Value,
     vm::InterpretError,
 };
 
 #[derive(Copy, Clone, Debug, FromPrimitive, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u8)]
-enum Precedence {
+pub enum Precedence {
     None,
     Assignment,
     Or,
@@ -27,7 +28,7 @@ enum Precedence {
 
 impl Precedence {
     /// Should not be called on Error precedence
-    fn next(self) -> Self {
+    pub fn next(self) -> Self {
         FromPrimitive::from_u8(self as u8 + 1).unwrap()
     }
 
@@ -75,19 +76,19 @@ impl Precedence {
         }
     }
 }
-fn report_error(token: &Token, msg: &str) {
+pub fn report_error(token: &Token, msg: &str) {
     println!(
         "Error at line {}, token '{}': {msg}",
         token.line, token.lexeme
     );
 }
 
-fn report_error_eof(msg: &str) {
+pub fn report_error_eof(msg: &str) {
     println!("Error at end of file: {msg}");
 }
 
-struct ErrorIgnoreTokenScanner<'a> {
-    inner: TokenScanner<'a>,
+pub struct ErrorIgnoreTokenScanner<'a> {
+    pub inner: TokenScanner<'a>,
 }
 
 impl<'a> Iterator for ErrorIgnoreTokenScanner<'a> {
@@ -109,7 +110,11 @@ impl<'a> Iterator for ErrorIgnoreTokenScanner<'a> {
 }
 
 impl<'a> PrevPeekable<ErrorIgnoreTokenScanner<'a>> {
-    pub fn consume_token(&mut self, ttype: TokenType, msg: &str) -> Result<Token, InterpretError> {
+    pub fn consume_token(
+        &mut self,
+        ttype: TokenType,
+        msg: &str,
+    ) -> Result<Token<'a>, InterpretError> {
         if let Some(tok) = self.next() {
             if tok.ttype != ttype {
                 report_error(&tok, msg);
@@ -123,11 +128,51 @@ impl<'a> PrevPeekable<ErrorIgnoreTokenScanner<'a>> {
     }
 }
 
+pub type CompilerResult<T> = Result<T, InterpretError>;
+
+#[derive(Debug, Default)]
+pub struct GlobalBindings<'a> {
+    pub global_slots: BTreeMap<&'a str, u32>,
+    pub undeclared_globals: HashSet<&'a str>,
+}
+
+impl<'a> GlobalBindings<'a> {
+    fn next_undeclared_slot(&mut self) -> u32 {
+        self.global_slots
+            .last_entry()
+            .map(|e| e.get() + 1)
+            .unwrap_or(0)
+    }
+
+    pub fn use_binding(&mut self, name: &'a str) -> u32 {
+        let next_idx = self.next_undeclared_slot();
+        self.global_slots.get(name).cloned().unwrap_or_else(|| {
+            self.global_slots.insert(name, next_idx);
+            self.undeclared_globals.insert(name);
+            next_idx
+        })
+    }
+
+    pub fn declare_binding(&mut self, name: &'a str) -> Option<u32> {
+        self.undeclared_globals.remove(name);
+        if self.global_slots.contains_key(name) {
+            // can't redeclare
+            None
+        } else {
+            let next_idx = self.next_undeclared_slot();
+            self.global_slots.insert(name, next_idx);
+            Some(next_idx)
+        }
+    }
+}
+
 pub struct Compiler<'a> {
-    source: &'a str,
-    scanner: PrevPeekable<ErrorIgnoreTokenScanner<'a>>,
+    pub source: &'a str,
+    pub scanner: PrevPeekable<ErrorIgnoreTokenScanner<'a>>,
     // TODO in the future, we will have multiple chunks going at once
-    chunk: Chunk,
+    pub chunk: Chunk,
+
+    pub global_bindings: GlobalBindings<'a>,
 }
 
 impl<'a> Compiler<'a> {
@@ -139,146 +184,25 @@ impl<'a> Compiler<'a> {
             chunk: Chunk::default(),
             source,
             scanner,
+            global_bindings: GlobalBindings::default(),
         }
     }
 
-    fn emit_constant(&mut self, token: &Token, value: Value) {
-        let idx = self.chunk.push_constant(value);
-        self.chunk
-            .push(ByteCode::from_constant_index(idx), token.line)
-    }
+    pub fn compile(mut self) -> CompilerResult<Chunk> {
+        // self.compile_expression()?;
 
-    fn compile_precedence(&mut self, precedence: Precedence) -> Result<(), InterpretError> {
-        use TokenType::*;
-        // Compile token as prefix
-        match self.scanner.next() {
-            Some(tok) => match tok.ttype {
-                LParen => self.compile_grouping(),
-                Minus => self.compile_unary(),
-                Number => self.compile_number(),
-                Str => self.compile_string(),
-                False | True | Nil => self.compile_literal(),
-                Bang => self.compile_unary(),
-                _ => {
-                    report_error(&tok, "Expected expression here");
-                    Err(InterpretError::Compiler)
-                }
-            },
-
-            None => {
-                report_error_eof("EOF reached");
-                Err(InterpretError::Compiler)
-            }
-        }?;
-
-        // Compile token as infix
-        while let Some(tok) = self.scanner.peek() {
-            if precedence > Precedence::of(tok.ttype) {
-                break;
-            }
-
-            match self.scanner.next() {
-                Some(tok) => match tok.ttype {
-                    Minus | Plus | Slash | Star | EqualEqual | Greater | GreaterEqual | Less
-                    | LessEqual => self.compile_binary(),
-                    _ => Ok(()),
-                },
-                None => {
-                    report_error_eof("EOF reached");
-                    Err(InterpretError::Compiler)
-                }
-            }?;
+        while let Some(_) = self.scanner.peek() {
+            self.compile_declaration()?;
         }
-
-        Ok(())
-    }
-
-    fn compile_expression(&mut self) -> Result<(), InterpretError> {
-        self.compile_precedence(Precedence::Assignment)?;
-        Ok(())
-    }
-
-    fn compile_number(&mut self) -> Result<(), InterpretError> {
-        let token = self.scanner.prev_unwrap();
-        self.emit_constant(&token, Value::Number(token.lexeme.parse().unwrap()));
-        Ok(())
-    }
-
-    fn compile_string(&mut self) -> Result<(), InterpretError> {
-        let token = self.scanner.prev_unwrap();
-        let strlen = token.lexeme.len();
-        self.emit_constant(
-            &token,
-            Value::Str(token.lexeme[1..strlen - 1].to_owned().into_boxed_str()),
-        );
-        Ok(())
-    }
-
-    fn compile_literal(&mut self) -> Result<(), InterpretError> {
-        use TokenType::*;
-        let token = self.scanner.prev_unwrap();
-        match token.ttype {
-            Nil => self.chunk.push(ByteCode::Nil, token.line),
-            True => self.chunk.push(ByteCode::True, token.line),
-            False => self.chunk.push(ByteCode::False, token.line),
-            _ => unreachable!(),
-        }
-        Ok(())
-    }
-
-    fn compile_unary(&mut self) -> Result<(), InterpretError> {
-        use TokenType::*;
-        let op = self.scanner.prev_unwrap();
-
-        // Compile operand
-        self.compile_precedence(Precedence::Unary)?;
-
-        match op.ttype {
-            Minus => self.chunk.push(ByteCode::Negate, op.line),
-            Bang => self.chunk.push(ByteCode::Not, op.line),
-            // unreachable
-            _ => panic!("Operation {op:?} not handled"),
-        }
-        Ok(())
-    }
-
-    fn compile_binary(&mut self) -> Result<(), InterpretError> {
-        use TokenType::*;
-        let op = self.scanner.prev_unwrap();
-        self.compile_precedence(Precedence::of(op.ttype).next())?;
-
-        match op.ttype {
-            Plus => self.chunk.push(ByteCode::Add, op.line),
-            Minus => self.chunk.push(ByteCode::Sub, op.line),
-            Star => self.chunk.push(ByteCode::Mul, op.line),
-            Slash => self.chunk.push(ByteCode::Div, op.line),
-
-            EqualEqual | BangEqual => self.chunk.push(ByteCode::Eq, op.line),
-            Greater | GreaterEqual => self.chunk.push(ByteCode::Gt, op.line),
-            Less | LessEqual => self.chunk.push(ByteCode::Lt, op.line),
-            _ => panic!("Operation {op:?} not handled"),
-        }
-
-        match op.ttype {
-            BangEqual | GreaterEqual | LessEqual => self.chunk.push(ByteCode::Not, op.line),
-            _ => {}
-        }
-
-        Ok(())
-    }
-
-    fn compile_grouping(&mut self) -> Result<(), InterpretError> {
-        self.compile_expression()?;
-        self.scanner
-            .consume_token(TokenType::RParen, "Expected ')' after expression")?;
-        Ok(())
-    }
-
-    pub fn compile(mut self) -> Result<Chunk, InterpretError> {
-        self.compile_expression()?;
 
         self.chunk.disassemble();
 
+        if !self.global_bindings.undeclared_globals.is_empty() {
+            report_error_eof("{num_slots} global bindings were not declared, but are used");
+            return Err(InterpretError::Compiler);
+        }
+        // TODO: safe convert
+        self.chunk.global_slots = self.global_bindings.global_slots.keys().count() as u32;
         if let Some(t) = self.scanner.peek() {
             report_error(t, "Expected EOF");
             Err(InterpretError::Compiler)

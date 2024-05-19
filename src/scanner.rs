@@ -249,6 +249,8 @@ pub enum TokenType {
     BangEqual,
     Equal,
     EqualEqual,
+    // TODO: add support for ?, :, and ?: (true ? 1 : 0) and (nil ?: 0)
+    //       where the statements after ?, :, and ?: are lazily evaluated.
     Greater,
     GreaterEqual,
     Less,

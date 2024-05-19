@@ -1,1 +1,6 @@
-"hello" == "he" + "llo"
+print "Hello " + "world";
+print 1;
+var i = "hello " + "world";
+var j;
+var k;
+var l = "hi";

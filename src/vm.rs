@@ -1,3 +1,5 @@
+
+
 use crate::{
     chunk::{ByteCode, Chunk},
     value::Value,
@@ -12,6 +14,7 @@ pub enum InterpretError {
 pub struct VM<'a> {
     pub chunk: &'a Chunk,
     pub stack: Vec<Value>,
+    pub globals: Vec<Value>,
 }
 
 fn report_error(line: usize, bytecode: &ByteCode, msg: &str) -> Result<(), InterpretError> {
@@ -24,6 +27,7 @@ impl<'a> VM<'a> {
         VM {
             chunk,
             stack: vec![],
+            globals: vec![Value::Nil; chunk.global_slots as usize],
         }
     }
 
@@ -39,8 +43,8 @@ impl<'a> VM<'a> {
                 Constant(idx) => vm.stack.push(chunk.get_constant(idx as u32)),
                 ConstantLong(idx) => vm.stack.push(chunk.get_constant(idx as u32)),
                 Nil => vm.stack.push(Value::Nil),
-                True => vm.stack.push(Value::Bool(true)),
-                False => vm.stack.push(Value::Bool(false)),
+                True => vm.stack.push(true.into()),
+                False => vm.stack.push(false.into()),
                 Negate => {
                     let val = match vm.stack.pop().ok_or(InterpretError::Runtime)? {
                         Value::Number(val) => -val,
@@ -53,19 +57,21 @@ impl<'a> VM<'a> {
                         }
                     };
 
-                    vm.stack.push(Value::Number(val));
+                    vm.stack.push(val.into());
                 }
                 Add | Sub | Mul | Div => {
                     let r = vm.stack.pop().ok_or(InterpretError::Runtime)?;
                     let l = vm.stack.pop().ok_or(InterpretError::Runtime)?;
 
                     let res = match (bytecode, l, r) {
-                        (Add, Value::Number(l), Value::Number(r)) => Value::Number(l + r),
-                        (Sub, Value::Number(l), Value::Number(r)) => Value::Number(l - r),
-                        (Mul, Value::Number(l), Value::Number(r)) => Value::Number(l * r),
-                        (Div, Value::Number(l), Value::Number(r)) => Value::Number(l / r),
-                        (Add, Value::Str(l), Value::Str(r)) => Value::Str(format!("{l}{r}").into_boxed_str()),
-                        (Mul, Value::Str(l), Value::Number(r)) if r.fract() == 0.0 => Value::Str(l.repeat(r as usize).into_boxed_str()),
+                        (Add, Value::Number(l), Value::Number(r)) => (l + r).into(),
+                        (Sub, Value::Number(l), Value::Number(r)) => (l - r).into(),
+                        (Mul, Value::Number(l), Value::Number(r)) => (l * r).into(),
+                        (Div, Value::Number(l), Value::Number(r)) => (l / r).into(),
+                        (Add, Value::Str(l), Value::Str(r)) => format!("{l}{r}").into(),
+                        (Mul, Value::Str(l), Value::Number(r)) if r.fract() == 0.0 => {
+                            l.repeat(r as usize).into()
+                        },
                         (_, l, r) => 
                             return report_error(
                                 chunk.get_line(offset),
@@ -78,12 +84,12 @@ impl<'a> VM<'a> {
                 }
                 Not => {
                     let val = !vm.stack.pop().ok_or(InterpretError::Runtime)?.is_truthy();
-                    vm.stack.push(Value::Bool(val));
+                    vm.stack.push(val.into());
                 }
                 Eq => {
                     let r = vm.stack.pop().ok_or(InterpretError::Runtime)?;
                     let l = vm.stack.pop().ok_or(InterpretError::Runtime)?;
-                    vm.stack.push(Value::Bool(r == l))
+                    vm.stack.push((r == l).into())
                 }
                 Gt | Lt => {
                     let r = vm.stack.pop().ok_or(InterpretError::Runtime)?;
@@ -102,12 +108,27 @@ impl<'a> VM<'a> {
                             )
                         }
                     };
-                    vm.stack.push(Value::Bool(res))
+                    vm.stack.push(res.into())
                 }
+                Print => {
+                    println!("{}", vm.stack.pop().ok_or(InterpretError::Runtime)?);
+                }
+                SetGlobal(slot) => {
+                    let val = vm.stack.pop().ok_or(InterpretError::Runtime)?;
+                    vm.globals[slot as usize] = val;
+                }
+                GetGlobal(slot) => {
+                    let val = vm.stack[slot as usize].clone();
+                    vm.stack.push(val);
+                }
+                Pop => {
+                    vm.stack.pop().ok_or(InterpretError::Runtime)?;
+                },
             }
         }
 
         dbg!(vm.stack);
+        dbg!(vm.globals);
 
         Ok(())
     }

@@ -9,3 +9,4 @@ itertools = "0.12.1"
 
 num-derive = "0.4.2"
 num-traits = "0.2.19"
+bumpalo = { version = "3.16.0", features = ["allocator_api"] }

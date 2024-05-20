@@ -71,6 +71,7 @@ impl Precedence {
             TokenType::This => Precedence::None,
             TokenType::True => Precedence::None,
             TokenType::Var => Precedence::None,
+            TokenType::Val => Precedence::None,
             TokenType::While => Precedence::None,
             TokenType::Error => Precedence::None,
         }
@@ -166,6 +167,58 @@ impl<'a> GlobalBindings<'a> {
     }
 }
 
+#[derive(Debug, Default)]
+pub struct Scope<'a> {
+    /// Depths are required to be increasing or equal
+    /// Depth can be -1
+    // Depth, Token, Mutable
+    pub locals: Vec<(isize, Token<'a>, bool)>,
+    pub depth: isize,
+}
+
+impl<'a> Scope<'a> {
+    /// Finds the highest depth local
+    pub fn find(&self, name: &str) -> Option<&(isize, Token<'a>, bool)> {
+        self.locals
+            .iter()
+            .filter(|(_, t, _)| t.lexeme == name)
+            .last()
+    }
+
+    /// Finds the highest index
+    pub fn find_index(&self, name: &str) -> Option<(usize, bool)> {
+        self.locals
+            .iter()
+            .enumerate()
+            .filter(|(_, (_, t, _))| t.lexeme == name)
+            .map(|(i, (_, _, b))| (i, *b))
+            .last()
+    }
+
+    pub fn increment_depth(&mut self) {
+        self.depth += 1;
+    }
+
+    pub fn decrement_depth(&mut self) -> usize {
+        let prev_size = self.locals.len();
+        self.locals.retain(|(d, _, _)| d < &self.depth);
+        self.depth -= 1;
+        prev_size - self.locals.len()
+    }
+
+    /// Returns success
+    pub fn add_local(&mut self, token: Token<'a>, mutable: bool) -> bool {
+        if let Some((depth, _, _)) = self.find(&token.lexeme) {
+            if depth >= &self.depth && depth != &-1 {
+                return false;
+            }
+        }
+
+        self.locals.push((self.depth, token, mutable));
+        true
+    }
+}
+
 pub struct Compiler<'a> {
     pub source: &'a str,
     pub scanner: PrevPeekable<ErrorIgnoreTokenScanner<'a>>,
@@ -173,6 +226,8 @@ pub struct Compiler<'a> {
     pub chunk: Chunk,
 
     pub global_bindings: GlobalBindings<'a>,
+
+    pub scope: Scope<'a>,
 }
 
 impl<'a> Compiler<'a> {
@@ -185,6 +240,7 @@ impl<'a> Compiler<'a> {
             source,
             scanner,
             global_bindings: GlobalBindings::default(),
+            scope: Scope::default(),
         }
     }
 
@@ -194,8 +250,6 @@ impl<'a> Compiler<'a> {
         while let Some(_) = self.scanner.peek() {
             self.compile_decl()?;
         }
-
-        self.chunk.disassemble();
 
         if !self.global_bindings.undeclared_globals.is_empty() {
             report_error_eof(&format!(
@@ -212,6 +266,7 @@ impl<'a> Compiler<'a> {
 
         // TODO: safe convert
         self.chunk.global_slots = self.global_bindings.global_slots.keys().count() as u32;
+        self.chunk.disassemble();
         if let Some(t) = self.scanner.peek() {
             report_error(t, "Expected EOF");
             Err(InterpretError::Compiler)

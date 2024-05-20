@@ -1,5 +1,3 @@
-use itertools::Itertools;
-
 use crate::{
     chunk::ByteCode,
     compiler::{report_error, report_error_eof, Compiler, CompilerResult, Precedence},
@@ -105,15 +103,29 @@ impl<'a> Compiler<'a> {
         self.compile_named_var(&self.scanner.prev_unwrap(), can_assign)
     }
 
-    // right now we assume these are all global
     fn compile_named_var(&mut self, name: &Token<'a>, can_assign: bool) -> CompilerResult<()> {
-        let slot = self.global_bindings.use_binding(name.lexeme);
+        // check if this is a local variable
+        let (setop, getop, mutable) =
+            if let Some((v, mutable)) = self.scope.find_index(&name.lexeme) {
+                (
+                    ByteCode::SetLocal(v as u32),
+                    ByteCode::GetLocal(v as u32),
+                    mutable,
+                )
+            } else {
+                let slot = self.global_bindings.use_binding(name.lexeme);
+                (ByteCode::SetGlobal(slot), ByteCode::GetGlobal(slot), true)
+            };
 
         if can_assign && self.scanner.advance_if_match(TokenType::Equal).is_some() {
+            if !mutable {
+                report_error(name, &format!("Variable {} is not mutable", name.lexeme));
+                return Err(InterpretError::Compiler);
+            }
             self.compile_expression()?;
-            self.chunk.push(ByteCode::SetGlobal(slot), name.line);
+            self.chunk.push(setop, name.line);
         } else {
-            self.chunk.push(ByteCode::GetGlobal(slot), name.line);
+            self.chunk.push(getop, name.line);
         }
 
         Ok(())

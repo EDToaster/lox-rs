@@ -34,6 +34,9 @@ pub enum ByteCode {
     SetGlobal(u32) = 0x60,
     GetGlobal(u32),
 
+    SetLocal(u32),
+    GetLocal(u32),
+
     // Temporary, will remove eventually...
     Print = 0x80,
 }
@@ -173,6 +176,14 @@ impl Chunk {
                 self.push_raw(0x61);
                 self.push_raw_slice(&slot.to_le_bytes());
             }
+            SetLocal(slot) => {
+                self.push_raw(0x62);
+                self.push_raw_slice(&slot.to_le_bytes());
+            }
+            GetLocal(slot) => {
+                self.push_raw(0x63);
+                self.push_raw_slice(&slot.to_le_bytes());
+            }
 
             Print => self.push_raw(0x80),
         }
@@ -231,6 +242,22 @@ impl<'a> Iterator for ChunkIterator<'a> {
             0x61 => {
                 self.ptr += 4;
                 ByteCode::GetGlobal(u32::from_le_bytes(
+                    self.inner.bytecode[opcode_ptr + 1..opcode_ptr + 5]
+                        .try_into()
+                        .unwrap(),
+                ))
+            }
+            0x62 => {
+                self.ptr += 4;
+                ByteCode::SetLocal(u32::from_le_bytes(
+                    self.inner.bytecode[opcode_ptr + 1..opcode_ptr + 5]
+                        .try_into()
+                        .unwrap(),
+                ))
+            }
+            0x63 => {
+                self.ptr += 4;
+                ByteCode::GetLocal(u32::from_le_bytes(
                     self.inner.bytecode[opcode_ptr + 1..opcode_ptr + 5]
                         .try_into()
                         .unwrap(),

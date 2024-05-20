@@ -1,5 +1,8 @@
-var breakfast = "beignets";
-var beverage = "cafe au lait";
-breakfast = "beignets with " + beverage;
-
-print breakfast;
+{
+	val a = "hello";
+	{
+		var a = a + ", world!";
+		print a;
+	}
+	print a;
+}

@@ -121,6 +121,14 @@ impl<'a> VM<'a> {
                     let val = vm.globals[slot as usize].clone();
                     vm.stack.push(val);
                 }
+                SetLocal(idx) => {
+                    let val = vm.stack.last().ok_or(InterpretError::Runtime)?.clone();
+                    vm.stack[idx as usize] = val;
+                },
+                GetLocal(idx) => {
+                    let val = vm.stack[idx as usize].clone();
+                    vm.stack.push(val);
+                },
                 Pop => {
                     vm.stack.pop().ok_or(InterpretError::Runtime)?;
                 },

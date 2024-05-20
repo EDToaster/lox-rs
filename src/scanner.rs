@@ -202,6 +202,7 @@ impl<'a> TokenScanner<'a> {
             "this" => TokenType::This,
             "true" => TokenType::True,
             "var" => TokenType::Var,
+            "val" => TokenType::Val,
             "while" => TokenType::While,
             _ => TokenType::Ident,
         };
@@ -277,6 +278,7 @@ pub enum TokenType {
     This,
     True,
     Var,
+    Val,
     While,
 
     // Misc

@@ -56,7 +56,7 @@ impl Precedence {
             TokenType::Ident => Precedence::None,
             TokenType::Str => Precedence::None,
             TokenType::Number => Precedence::None,
-            TokenType::And => Precedence::None,
+            TokenType::And => Precedence::And,
             TokenType::Class => Precedence::None,
             TokenType::Else => Precedence::None,
             TokenType::False => Precedence::None,
@@ -64,7 +64,7 @@ impl Precedence {
             TokenType::Fun => Precedence::None,
             TokenType::If => Precedence::None,
             TokenType::Nil => Precedence::None,
-            TokenType::Or => Precedence::None,
+            TokenType::Or => Precedence::Or,
             TokenType::Print => Precedence::None,
             TokenType::Return => Precedence::None,
             TokenType::Super => Precedence::None,
@@ -74,6 +74,9 @@ impl Precedence {
             TokenType::Val => Precedence::None,
             TokenType::While => Precedence::None,
             TokenType::Error => Precedence::None,
+            TokenType::Bar => Precedence::None,
+            TokenType::FatArrow => Precedence::None,
+            TokenType::Match => Precedence::None,
         }
     }
 }
@@ -266,6 +269,7 @@ impl<'a> Compiler<'a> {
 
         // TODO: safe convert
         self.chunk.global_slots = self.global_bindings.global_slots.keys().count() as u32;
+        self.chunk.resolve_monkey_patches();
         self.chunk.disassemble();
         if let Some(t) = self.scanner.peek() {
             report_error(t, "Expected EOF");

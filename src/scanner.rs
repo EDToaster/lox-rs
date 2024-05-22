@@ -34,6 +34,12 @@ impl<'a> Iterator for Scanner<'a> {
 }
 
 impl<'a> Scanner<'a> {
+    pub fn next_ignore_whitespace(&mut self) -> Option<char> {
+        self.take_while_ref(|&c| c.is_whitespace()).count();
+        self.make_lexeme();
+        self.next()
+    }
+
     // conditionally match the next char
     pub fn next_if_match(&mut self, c: char) -> bool {
         if let Some(&n) = self.source_iterator.peek() {
@@ -57,9 +63,8 @@ impl<'a> Iterator for TokenScanner<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         // Skip whitespace
-        self.take_whitespace();
 
-        while let Some(c) = self.chars.next() {
+        while let Some(c) = self.chars.next_ignore_whitespace() {
             let tok = match c {
                 c if c.is_ascii_digit() => self.take_numeric(),
                 c if is_valid_identifier_first(c) => self.take_identifier_or_keyword(),
@@ -73,6 +78,7 @@ impl<'a> Iterator for TokenScanner<'a> {
                 '.' => self.make_token(TokenType::Dot),
                 '-' => self.make_token(TokenType::Minus),
                 '+' => self.make_token(TokenType::Plus),
+                '|' => self.make_token(TokenType::Bar),
                 '/' => {
                     if self.chars.next_if_match('/') {
                         self.take_until_newline();
@@ -93,6 +99,8 @@ impl<'a> Iterator for TokenScanner<'a> {
                 '=' => {
                     let t = if self.chars.next_if_match('=') {
                         TokenType::EqualEqual
+                    } else if self.chars.next_if_match('>') {
+                        TokenType::FatArrow
                     } else {
                         TokenType::Equal
                     };
@@ -137,18 +145,6 @@ impl<'a> TokenScanner<'a> {
         };
 
         TokenScanner { chars: scanner }
-    }
-
-    /// Consume all whitespace elements
-    fn take_whitespace(&mut self) {
-        let mut comment = false;
-        self.chars
-            .take_while_ref(|&c| {
-                comment = true;
-                c.is_whitespace()
-            })
-            .count();
-        self.chars.make_lexeme();
     }
 
     fn take_until_newline(&mut self) {
@@ -204,6 +200,7 @@ impl<'a> TokenScanner<'a> {
             "var" => TokenType::Var,
             "val" => TokenType::Val,
             "while" => TokenType::While,
+            "match" => TokenType::Match,
             _ => TokenType::Ident,
         };
         Token {
@@ -244,12 +241,14 @@ pub enum TokenType {
     Semi,
     Slash,
     Star,
+    Bar,
 
     // One or two char
     Bang,
     BangEqual,
     Equal,
     EqualEqual,
+    FatArrow,
     // TODO: add support for ?, :, and ?: (true ? 1 : 0) and (nil ?: 0)
     //       where the statements after ?, :, and ?: are lazily evaluated.
     Greater,
@@ -280,6 +279,7 @@ pub enum TokenType {
     Var,
     Val,
     While,
+    Match,
 
     // Misc
     Error,

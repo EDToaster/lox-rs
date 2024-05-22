@@ -132,6 +132,19 @@ impl<'a> VM<'a> {
                 Pop => {
                     vm.stack.pop().ok_or(InterpretError::Runtime)?;
                 },
+                Dup => {
+                    let v = vm.stack.last().ok_or(InterpretError::Runtime)?;
+                    vm.stack.push(v.clone());
+                },
+                JumpF(j_offset) => {
+                    let val = vm.stack.last().ok_or(InterpretError::Runtime)?.clone();
+                    if !val.is_truthy() {
+                        iterator.ptr = ((offset as isize) + j_offset as isize) as usize;
+                    }
+                },
+                JumpOffset(j_offset) => {
+                    iterator.ptr = ((offset as isize) + j_offset as isize) as usize;
+                },
             }
         }
 

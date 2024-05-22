@@ -1,3 +1,5 @@
+use itertools::Itertools;
+
 use crate::{
     chunk::ByteCode,
     compiler::{report_error, Compiler, CompilerResult},
@@ -78,8 +80,14 @@ impl<'a> Compiler<'a> {
     }
 
     fn compile_statement(&mut self) -> CompilerResult<()> {
-        if let Some(_) = self.scanner.advance_if_match(TokenType::Print) {
+        if self.scanner.advance_if_match(TokenType::Print).is_some() {
             self.compile_print_statement()?;
+        } else if self.scanner.advance_if_match(TokenType::If).is_some() {
+            self.compile_if_statement()?;
+        } else if self.scanner.advance_if_match(TokenType::While).is_some() {
+            self.compile_while_statement()?;
+        } else if self.scanner.advance_if_match(TokenType::Match).is_some() {
+            self.compile_match_statement()?;
         } else if let Some(t) = self.scanner.advance_if_match(TokenType::LBrace) {
             self.scope.increment_depth();
             self.compile_block()?;
@@ -123,6 +131,177 @@ impl<'a> Compiler<'a> {
         self.scanner
             .consume_token(TokenType::Semi, "Expected ';' after value")?;
         self.chunk.push(ByteCode::Print, line);
+        Ok(())
+    }
+
+    fn compile_if_statement(&mut self) -> CompilerResult<()> {
+        let line = self.scanner.prev_unwrap().line;
+        //   condition
+        //   jz else
+        //   pop
+        //   true_branch
+        //   jump end
+        // else:
+        //   pop
+        //   false_branch
+        // end:
+
+        self.scanner
+            .consume_token(TokenType::LParen, "Expected '(' after if")?;
+        self.compile_expression()?;
+        self.scanner
+            .consume_token(TokenType::RParen, "Expected ')' after condition")?;
+
+        // Jump if false
+        let else_label = self.chunk.allocate_new_label();
+        let end_label = self.chunk.allocate_new_label();
+
+        self.chunk
+            .push_monkey_patch(ByteCode::JumpF(0), line, else_label);
+        self.chunk.push(ByteCode::Pop, line);
+        self.compile_statement()?;
+        self.chunk
+            .push_monkey_patch(ByteCode::JumpOffset(0), line, end_label);
+        self.chunk.push_label(else_label);
+        self.chunk.push(ByteCode::Pop, line);
+
+        if let Some(_) = self.scanner.advance_if_match(TokenType::Else) {
+            self.compile_statement()?;
+        }
+
+        self.chunk.push_label(end_label);
+
+        Ok(())
+    }
+
+    fn compile_while_statement(&mut self) -> CompilerResult<()> {
+        // cond:
+        //   cond
+        //   jump_f .end
+        //   pop
+        //   body
+        //   jump .cond
+        // end:
+        //   pop
+
+        let line = self.scanner.prev_unwrap().line;
+
+        let cond_label = self.chunk.allocate_new_label();
+        let end_label = self.chunk.allocate_new_label();
+
+        self.scanner
+            .consume_token(TokenType::LParen, "Expected '(' after while")?;
+        self.chunk.push_label(cond_label);
+        self.compile_expression()?;
+        self.scanner
+            .consume_token(TokenType::RParen, "Expected ')' after condition")?;
+
+        self.chunk
+            .push_monkey_patch(ByteCode::JumpF(0), line, end_label);
+        self.chunk.push(ByteCode::Pop, line);
+
+        // compile body and jump back to cond
+        self.compile_statement()?;
+        self.chunk
+            .push_monkey_patch(ByteCode::JumpOffset(0), line, cond_label);
+
+        self.chunk.push_label(end_label);
+        self.chunk.push(ByteCode::Pop, line);
+        Ok(())
+    }
+
+    fn compile_match_statement(&mut self) -> CompilerResult<()> {
+        //   match_expr
+        // branch_1:
+        // expr_1:
+        //   dup
+        //   expr_1
+        //   eq
+        //   not
+        //   jz .statement_a
+        //   pop
+        // expr_2:
+        //   dup
+        //   expr_2
+        //   eq
+        //   not
+        //   jz .statement_a
+        //   pop
+        //
+        //   jump .branch_2
+        // statement_a:
+        //   pop
+        //   statement_a
+        //   jump .end
+        //
+        // branch_2:
+        // ...
+        //
+        // branch_n:
+        // end:
+        //   pop
+
+        let line = self.scanner.prev_unwrap().line;
+
+        self.scanner
+            .consume_token(TokenType::LParen, "Expected '(' after match")?;
+        self.compile_expression()?;
+        self.scanner
+            .consume_token(TokenType::RParen, "Expected ')' after match expression")?;
+
+        let end_label = self.chunk.allocate_new_label();
+        let mut next_branch = self.chunk.allocate_new_label();
+
+        self.scanner
+            .consume_token(TokenType::LBrace, "Expected '{' after match expression")?;
+
+        while let None = self.scanner.advance_if_match(TokenType::RBrace) {
+            let this_statement = self.chunk.allocate_new_label();
+
+            self.chunk.push_label(next_branch);
+            next_branch = self.chunk.allocate_new_label();
+
+            // match each condition
+            loop {
+                if self.scanner.advance_if_match(TokenType::Else).is_some() {
+                    // it doesn't matter... it gets popped off the stack
+                    self.chunk.push(ByteCode::Dup, line);
+                    self.chunk
+                        .push_monkey_patch(ByteCode::JumpOffset(0), line, this_statement);
+                    break;
+                }
+
+                self.chunk.push(ByteCode::Dup, line);
+                self.compile_expression()?;
+                self.chunk.push(ByteCode::Eq, line);
+                self.chunk.push(ByteCode::Not, line);
+                self.chunk
+                    .push_monkey_patch(ByteCode::JumpF(0), line, this_statement);
+                self.chunk.push(ByteCode::Pop, line);
+
+                if self.scanner.advance_if_match(TokenType::Bar).is_none() {
+                    break;
+                }
+            }
+
+            self.scanner
+                .consume_token(TokenType::FatArrow, "Expected '=>' after match conditions")?;
+
+            // Compile branches
+            self.chunk
+                .push_monkey_patch(ByteCode::JumpOffset(0), line, next_branch);
+
+            self.chunk.push_label(this_statement);
+            self.chunk.push(ByteCode::Pop, line);
+            self.compile_statement()?;
+            self.chunk
+                .push_monkey_patch(ByteCode::JumpOffset(0), line, end_label);
+        }
+
+        self.chunk.push_label(end_label);
+        self.chunk.push_label(next_branch);
+        self.chunk.push(ByteCode::Pop, line);
+
         Ok(())
     }
 }

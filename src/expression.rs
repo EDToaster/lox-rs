@@ -50,6 +50,8 @@ impl<'a> Compiler<'a> {
                 Some(tok) => match tok.ttype {
                     Minus | Plus | Slash | Star | EqualEqual | Greater | GreaterEqual | Less
                     | LessEqual => self.compile_binary(),
+                    And => self.compile_and(),
+                    Or => self.compile_or(),
                     _ => Ok(()),
                 },
                 None => {
@@ -71,6 +73,47 @@ impl<'a> Compiler<'a> {
 
     pub fn compile_expression(&mut self) -> CompilerResult<()> {
         self.compile_precedence(Precedence::Assignment)?;
+        Ok(())
+    }
+
+    fn compile_and(&mut self) -> CompilerResult<()> {
+        //   lhs
+        //   jump_f short_circuit
+        //   pop
+        //   rhs
+        // short_circuit:
+        let line = self.scanner.prev_unwrap().line;
+        let short_circuit = self.chunk.allocate_new_label();
+        self.chunk
+            .push_monkey_patch(ByteCode::JumpF(0), line, short_circuit);
+        self.chunk.push(ByteCode::Pop, line);
+        self.compile_precedence(Precedence::And)?;
+        self.chunk.push_label(short_circuit);
+        Ok(())
+    }
+
+    fn compile_or(&mut self) -> CompilerResult<()> {
+        //   lhs
+        //   jump_f rhs
+        //   jump short_circuit
+        // rhs:
+        //   pop
+        //   rhs
+        // short_circuit:
+
+        let line = self.scanner.prev_unwrap().line;
+
+        let rhs = self.chunk.allocate_new_label();
+        let short_circuit = self.chunk.allocate_new_label();
+
+        self.chunk.push_monkey_patch(ByteCode::JumpF(0), line, rhs);
+        self.chunk
+            .push_monkey_patch(ByteCode::JumpOffset(0), line, short_circuit);
+
+        self.chunk.push_label(rhs);
+        self.chunk.push(ByteCode::Pop, line);
+        self.compile_precedence(Precedence::Or)?;
+        self.chunk.push_label(short_circuit);
         Ok(())
     }
 

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use itertools::Itertools;
 
 use crate::value::Value;
@@ -29,6 +31,7 @@ pub enum ByteCode {
 
     // Stack mutations
     Pop = 0x40,
+    Dup,
 
     // Variables
     SetGlobal(u32) = 0x60,
@@ -39,6 +42,10 @@ pub enum ByteCode {
 
     // Temporary, will remove eventually...
     Print = 0x80,
+
+    // Control Flow
+    JumpF(i16) = 0xA0,
+    JumpOffset(i16),
 }
 
 impl ByteCode {
@@ -49,6 +56,8 @@ impl ByteCode {
     }
 }
 
+type LabelId = usize;
+
 #[derive(Debug)]
 pub struct Chunk {
     bytecode: Vec<u8>,
@@ -56,6 +65,10 @@ pub struct Chunk {
     pub global_slots: u32,
     // Vec of line number to start
     line_info: Vec<(usize, usize)>,
+
+    label_count: usize,
+    labels: HashMap<LabelId, usize>,
+    to_patch: Vec<(usize, LabelId)>,
 }
 
 impl Default for Chunk {
@@ -65,6 +78,9 @@ impl Default for Chunk {
             constants: vec![],
             line_info: vec![(0, 0)],
             global_slots: 0,
+            labels: HashMap::default(),
+            to_patch: vec![],
+            label_count: 0,
         }
     }
 }
@@ -168,6 +184,7 @@ impl Chunk {
             Lt => self.push_raw(0x23),
 
             Pop => self.push_raw(0x40),
+            Dup => self.push_raw(0x41),
             SetGlobal(slot) => {
                 self.push_raw(0x60);
                 self.push_raw_slice(&slot.to_le_bytes());
@@ -186,8 +203,49 @@ impl Chunk {
             }
 
             Print => self.push_raw(0x80),
+            JumpF(offset) => {
+                self.push_raw(0xA0);
+                self.push_raw_slice(&offset.to_le_bytes());
+            }
+            JumpOffset(offset) => {
+                self.push_raw(0xA1);
+                self.push_raw_slice(&offset.to_le_bytes());
+            }
         }
         self.extend_line_info(line, offset);
+    }
+
+    pub fn push_monkey_patch(&mut self, bytecode: ByteCode, line: usize, label: usize) {
+        let offset = self.bytecode.len();
+        self.push(bytecode, line);
+        self.to_patch.push((offset, label));
+    }
+
+    pub fn push_label(&mut self, l: usize) {
+        self.labels.insert(l, self.bytecode.len());
+    }
+
+    pub fn allocate_new_label(&mut self) -> usize {
+        let ret = self.label_count;
+        self.label_count += 1;
+        ret
+    }
+
+    pub fn resolve_monkey_patches(&mut self) {
+        for &(offset, label) in self.to_patch.iter() {
+            let resolved_location = *self
+                .labels
+                .get(&label)
+                .expect(&format!("Unresolved label {label}"));
+
+            let delta: i16 = (resolved_location as isize - offset as isize)
+                .try_into()
+                .expect(&format!(
+                    "Jump from {offset} to {resolved_location} is too far"
+                ));
+
+            self.bytecode[offset + 1..offset + 3].copy_from_slice(&delta.to_le_bytes())
+        }
     }
 }
 
@@ -230,6 +288,7 @@ impl<'a> Iterator for ChunkIterator<'a> {
             0x23 => ByteCode::Lt,
 
             0x40 => ByteCode::Pop,
+            0x41 => ByteCode::Dup,
 
             0x60 => {
                 self.ptr += 4;
@@ -265,6 +324,23 @@ impl<'a> Iterator for ChunkIterator<'a> {
             }
 
             0x80 => ByteCode::Print,
+
+            0xA0 => {
+                self.ptr += 2;
+                ByteCode::JumpF(i16::from_le_bytes(
+                    self.inner.bytecode[opcode_ptr + 1..opcode_ptr + 3]
+                        .try_into()
+                        .unwrap(),
+                ))
+            }
+            0xA1 => {
+                self.ptr += 2;
+                ByteCode::JumpOffset(i16::from_le_bytes(
+                    self.inner.bytecode[opcode_ptr + 1..opcode_ptr + 3]
+                        .try_into()
+                        .unwrap(),
+                ))
+            }
 
             // throw an error!
             _ => return None,

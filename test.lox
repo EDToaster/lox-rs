@@ -1,12 +1,5 @@
-var a = 0;
-var b = 1;
 
-while (a < 10) {
 
-	match (a) {
-		b | 2 | 3 => print "b, 2, 3";
-		else      => print "Rest";
-	}
-
-	a = a + 1;
+for (var a = 0; a < 10; a = a + 1) {
+	print a;
 }

@@ -86,6 +86,8 @@ impl<'a> Compiler<'a> {
             self.compile_if_statement()?;
         } else if self.scanner.advance_if_match(TokenType::While).is_some() {
             self.compile_while_statement()?;
+        } else if self.scanner.advance_if_match(TokenType::For).is_some() {
+            self.compile_for_statement()?;
         } else if self.scanner.advance_if_match(TokenType::Match).is_some() {
             self.compile_match_statement()?;
         } else if let Some(t) = self.scanner.advance_if_match(TokenType::LBrace) {
@@ -207,6 +209,75 @@ impl<'a> Compiler<'a> {
 
         self.chunk.push_label(end_label);
         self.chunk.push(ByteCode::Pop, line);
+        Ok(())
+    }
+
+    fn compile_for_statement(&mut self) -> CompilerResult<()> {
+        //   init
+        // cond:
+        //   cond
+        //   jump_f .end
+        //   jump .body
+        // post:
+        //   post
+        //   pop
+        //   jump .cond
+        // body:
+        //   pop
+        //   body
+        //   jump .post
+        // end:
+        //   pop
+
+        let line = self.scanner.prev_unwrap().line;
+
+        let cond_label = self.chunk.allocate_new_label();
+        let post_label = self.chunk.allocate_new_label();
+        let body_label = self.chunk.allocate_new_label();
+        let end_label = self.chunk.allocate_new_label();
+
+        self.scanner
+            .consume_token(TokenType::LParen, "Expected '(' after 'for'")?;
+
+        // ';' or decl
+        if self.scanner.advance_if_match(TokenType::Semi).is_none() {
+            self.compile_decl()?;
+        }
+        // ';' or cond
+        self.chunk.push_label(cond_label);
+        if let Some(t) = self.scanner.advance_if_match(TokenType::Semi) {
+            self.chunk.push(ByteCode::True, t.line);
+        } else {
+            self.compile_expression()?;
+            self.scanner
+                .consume_token(TokenType::Semi, "Expected ';' after for condition")?;
+        }
+        self.chunk
+            .push_monkey_patch(ByteCode::JumpF(0), line, end_label);
+        self.chunk
+            .push_monkey_patch(ByteCode::JumpOffset(0), line, body_label);
+
+        // ')' or post
+        self.chunk.push_label(post_label);
+        if self.scanner.advance_if_match(TokenType::RParen).is_none() {
+            self.compile_expression()?;
+            self.chunk.push(ByteCode::Pop, line);
+            self.scanner
+                .consume_token(TokenType::RParen, "Expected ')' after for")?;
+        }
+        self.chunk
+            .push_monkey_patch(ByteCode::JumpOffset(0), line, cond_label);
+
+        // Body
+        self.chunk.push_label(body_label);
+        self.chunk.push(ByteCode::Pop, line);
+        self.compile_statement()?;
+        self.chunk
+            .push_monkey_patch(ByteCode::JumpOffset(0), line, post_label);
+
+        self.chunk.push_label(end_label);
+        self.chunk.push(ByteCode::Pop, line);
+
         Ok(())
     }
 

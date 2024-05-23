@@ -1,7 +1,5 @@
 use std::iter::Peekable;
 
-use crate::scanner::Token;
-
 #[derive(Clone)]
 pub struct PrevPeekable<I>
 where

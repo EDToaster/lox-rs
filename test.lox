@@ -1,5 +1,25 @@
 
+var eight = 3 + 5;
+print "Hello, ${"world! ${2 + 3} birds"} are singing"; 
 
-for (var a = 0; a < 10; a = a + 1) {
-	print a;
-}
+// for (var a = 0; a < 10; a = a + 1) {
+// 	print a;
+// }
+
+// print "Hello, ${2} ${3}";
+
+// StrInterp "Hello, "
+// Lit 2
+// RBrace
+// StrInterp " "
+// Str ""
+// Semi
+
+
+// print "Hello, ${"nested"} outside";
+
+// StrInterp "Hello, "
+// Str "nested"
+// RBrace
+// Str " outside"
+// Semi

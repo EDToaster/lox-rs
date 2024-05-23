@@ -25,6 +25,7 @@ impl<'a> Compiler<'a> {
                 Minus => self.compile_unary(),
                 Number => self.compile_number(),
                 Str => self.compile_string(),
+                StrInterp => self.compile_string_interp(),
                 False | True | Nil => self.compile_literal(),
                 Bang => self.compile_unary(),
                 Ident => self.compile_var(can_assign),
@@ -125,8 +126,29 @@ impl<'a> Compiler<'a> {
 
     fn compile_string(&mut self) -> CompilerResult<()> {
         let token = self.scanner.prev_unwrap();
-        let strlen = token.lexeme.len();
-        self.emit_constant(&token, token.lexeme[1..strlen - 1].to_owned().into());
+        self.emit_constant(&token, token.lexeme.to_owned().into());
+        Ok(())
+    }
+
+    fn compile_string_interp(&mut self) -> CompilerResult<()> {
+        let token = self.scanner.prev_unwrap();
+        let line = token.line;
+        self.emit_constant(&token, token.lexeme.to_owned().into());
+
+        loop {
+            self.compile_expression()?;
+            self.chunk.push(ByteCode::Add, line);
+            self.scanner.consume_token(
+                TokenType::RBrace,
+                "Expecting '}' after String interpolation",
+            )?;
+
+            if let Some(s) = self.scanner.advance_if_match(TokenType::Str) {
+                self.emit_constant(&s, s.lexeme.to_owned().into());
+                self.chunk.push(ByteCode::Add, s.line);
+                break;
+            }
+        }
         Ok(())
     }
 

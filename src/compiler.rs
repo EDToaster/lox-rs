@@ -55,6 +55,7 @@ impl Precedence {
             TokenType::LessEqual => Precedence::Comparison,
             TokenType::Ident => Precedence::None,
             TokenType::Str => Precedence::None,
+            TokenType::StrInterp => Precedence::None,
             TokenType::Number => Precedence::None,
             TokenType::And => Precedence::And,
             TokenType::Class => Precedence::None,
@@ -223,7 +224,6 @@ impl<'a> Scope<'a> {
 }
 
 pub struct Compiler<'a> {
-    pub source: &'a str,
     pub scanner: PrevPeekable<ErrorIgnoreTokenScanner<'a>>,
     // TODO in the future, we will have multiple chunks going at once
     pub chunk: Chunk,
@@ -240,7 +240,6 @@ impl<'a> Compiler<'a> {
         });
         Compiler {
             chunk: Chunk::default(),
-            source,
             scanner,
             global_bindings: GlobalBindings::default(),
             scope: Scope::default(),

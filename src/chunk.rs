@@ -60,7 +60,7 @@ type LabelId = usize;
 
 #[derive(Debug)]
 pub struct Chunk {
-    bytecode: Vec<u8>,
+    pub bytecode: Vec<u8>,
     constants: Vec<Value>,
     pub global_slots: u32,
     // Vec of line number to start
@@ -126,6 +126,9 @@ impl Chunk {
     }
 
     pub fn push_constant(&mut self, value: Value) -> u32 {
+        if let Some(pos) = self.constants.iter().position(|v| v == &value) {
+            return pos as u32;
+        }
         self.constants.push(value);
         // TODO, do safe casting
         (self.constants.len() as u32) - 1

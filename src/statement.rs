@@ -1,5 +1,3 @@
-use itertools::Itertools;
-
 use crate::{
     chunk::ByteCode,
     compiler::{report_error, Compiler, CompilerResult},

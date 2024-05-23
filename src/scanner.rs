@@ -2,6 +2,8 @@ use std::{iter::Peekable, str::Chars};
 
 use itertools::Itertools;
 
+use crate::compiler::report_error;
+
 /// Scanner scans individual bytes
 #[derive(Debug, Clone)]
 struct Scanner<'a> {
@@ -12,9 +14,24 @@ struct Scanner<'a> {
     pub line: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ScannerState {
+    General,
+    StrInterp,
+}
+
 #[derive(Debug, Clone)]
 pub struct TokenScanner<'a> {
     chars: Scanner<'a>,
+
+    // Keeps track of current state of the scanner.0
+    // "${" pushes StrInterp on the stack, "{" pushes General on the stack
+    // when "}" is encountered, pop off the stack. If the top of the stack
+    // was StrInterp, set force_str.
+    state: Vec<ScannerState>,
+
+    // Force the next token to be a Str, or StrInter
+    force_str: bool,
 }
 
 impl<'a> Iterator for Scanner<'a> {
@@ -52,7 +69,11 @@ impl<'a> Scanner<'a> {
     }
 
     pub fn make_lexeme(&mut self) -> &'a str {
-        let ret = &self.source[self.start..self.current];
+        self.make_lexeme_strip(0)
+    }
+
+    pub fn make_lexeme_strip(&mut self, end_strip: usize) -> &'a str {
+        let ret = &self.source[self.start..(self.current - end_strip)];
         self.start = self.current;
         ret
     }
@@ -60,19 +81,41 @@ impl<'a> Scanner<'a> {
 
 impl<'a> Iterator for TokenScanner<'a> {
     type Item = Token<'a>;
-
     fn next(&mut self) -> Option<Self::Item> {
-        // Skip whitespace
+        loop {
+            if self.force_str {
+                self.force_str = false;
+                return Some(self.take_string());
+            }
 
-        while let Some(c) = self.chars.next_ignore_whitespace() {
+            let c = self.chars.next_ignore_whitespace();
+            if c.is_none() {
+                break;
+            }
+            let c = c.unwrap();
+
             let tok = match c {
                 c if c.is_ascii_digit() => self.take_numeric(),
                 c if is_valid_identifier_first(c) => self.take_identifier_or_keyword(),
-                '"' => self.take_string(),
+                '"' => {
+                    // Ignore the "
+                    self.chars.make_lexeme();
+                    self.take_string()
+                }
                 '(' => self.make_token(TokenType::LParen),
                 ')' => self.make_token(TokenType::RParen),
-                '{' => self.make_token(TokenType::LBrace),
-                '}' => self.make_token(TokenType::RBrace),
+                '{' => {
+                    self.state.push(ScannerState::General);
+                    self.make_token(TokenType::LBrace)
+                }
+                '}' => {
+                    // TODO: handle this properly!
+                    // For example if the program looks like
+                    //   print "hi"; }
+                    let top = self.state.pop().expect("");
+                    self.force_str = top == ScannerState::StrInterp;
+                    self.make_token(TokenType::RBrace)
+                }
                 ';' => self.make_token(TokenType::Semi),
                 ',' => self.make_token(TokenType::Comma),
                 '.' => self.make_token(TokenType::Dot),
@@ -144,7 +187,11 @@ impl<'a> TokenScanner<'a> {
             line: 1,
         };
 
-        TokenScanner { chars: scanner }
+        TokenScanner {
+            chars: scanner,
+            force_str: false,
+            state: vec![ScannerState::General],
+        }
     }
 
     fn take_until_newline(&mut self) {
@@ -153,11 +200,27 @@ impl<'a> TokenScanner<'a> {
         self.chars.make_lexeme();
     }
 
-    /// Continue taking string until "
+    /// Continue taking string until " or ${
     fn take_string(&mut self) -> Token<'a> {
-        self.chars.take_while_ref(|&c| c != '"').count();
-        self.chars.next();
-        self.make_token(TokenType::Str)
+        let mut dollar = false;
+
+        while let Some(t) = self.chars.next() {
+            if t == '"' {
+                return self.make_token_strip(TokenType::Str, 1);
+            } else if t == '$' {
+                dollar = true;
+            } else if dollar && t == '{' {
+                self.state.push(ScannerState::StrInterp);
+                return self.make_token_strip(TokenType::StrInterp, 2);
+            } else {
+                dollar = false;
+            }
+        }
+
+        // unclosed string!
+        let t = self.make_token(TokenType::Str);
+        report_error(&t, "Unterminated string!");
+        t
     }
 
     /// Continue taking numeric digits assuming the first digit is already consumed
@@ -211,7 +274,11 @@ impl<'a> TokenScanner<'a> {
     }
 
     fn make_token(&mut self, ttype: TokenType) -> Token<'a> {
-        let lexeme = self.chars.make_lexeme();
+        self.make_token_strip(ttype, 0)
+    }
+
+    fn make_token_strip(&mut self, ttype: TokenType, end_strip: usize) -> Token<'a> {
+        let lexeme = self.chars.make_lexeme_strip(end_strip);
         Token {
             lexeme,
             ttype,
@@ -259,6 +326,7 @@ pub enum TokenType {
     // Literals
     Ident,
     Str,
+    StrInterp,
     Number,
 
     // Keywords

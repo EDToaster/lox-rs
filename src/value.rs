@@ -1,5 +1,7 @@
 use std::{fmt::Display, rc::Rc};
 
+use crate::chunk::Chunk;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
     Nil,
@@ -7,6 +9,32 @@ pub enum Value {
     Number(f64),
     // TODO: String interning
     Str(Rc<str>),
+    Func(Rc<FuncObj>),
+}
+
+#[derive(Debug)]
+pub struct FuncObj {
+    pub arity: usize,
+    pub chunk: Chunk,
+    pub name: Option<Rc<str>>,
+}
+
+impl Display for FuncObj {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "<fn {}#{} (size: {})>",
+            self.name.as_ref().map(|n| n.as_ref()).unwrap_or("main"),
+            self.arity,
+            self.chunk.bytecode.len()
+        )
+    }
+}
+
+impl PartialEq for FuncObj {
+    fn eq(&self, other: &Self) -> bool {
+        return self.name == other.name;
+    }
 }
 
 impl<'a> Display for Value {
@@ -16,6 +44,7 @@ impl<'a> Display for Value {
             Value::Bool(b) => write!(f, "{b}"),
             Value::Number(n) => write!(f, "{n}"),
             Value::Str(s) => write!(f, "{s}"),
+            Value::Func(func) => write!(f, "{func}"),
         }
     }
 }

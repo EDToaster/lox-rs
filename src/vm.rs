@@ -12,7 +12,7 @@ pub enum InterpretError {
 }
 
 pub struct VM<'a> {
-    pub chunk: &'a Chunk,
+    _chunk: &'a Chunk,
     pub stack: Vec<Value>,
     pub globals: Vec<Value>,
 }
@@ -25,7 +25,7 @@ fn report_error(line: usize, bytecode: &ByteCode, msg: &str) -> Result<(), Inter
 impl<'a> VM<'a> {
     pub fn new(chunk: &Chunk) -> VM {
         VM {
-            chunk,
+            _chunk: chunk,
             stack: vec![],
             globals: vec![Value::Nil; chunk.global_slots as usize],
         }
@@ -68,7 +68,8 @@ impl<'a> VM<'a> {
                         (Sub, Value::Number(l), Value::Number(r)) => (l - r).into(),
                         (Mul, Value::Number(l), Value::Number(r)) => (l * r).into(),
                         (Div, Value::Number(l), Value::Number(r)) => (l / r).into(),
-                        (Add, Value::Str(l), Value::Str(r)) => format!("{l}{r}").into(),
+                        (Add, Value::Str(l), r) => format!("{l}{r}").into(),
+                        (Add, l, Value::Str(r)) => format!("{l}{r}").into(),
                         (Mul, Value::Str(l), Value::Number(r)) if r.fract() == 0.0 => {
                             l.repeat(r as usize).into()
                         },

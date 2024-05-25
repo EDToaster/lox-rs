@@ -8,8 +8,9 @@ use crate::{
 
 impl<'a> Compiler<'a> {
     fn emit_constant(&mut self, token: &Token, value: Value) {
-        let idx = self.chunk.push_constant(value);
-        self.chunk
+        let idx = self.scope.curr_chunk().push_constant(value);
+        self.scope
+            .curr_chunk()
             .push(ByteCode::from_constant_index(idx), token.line)
     }
 
@@ -53,6 +54,7 @@ impl<'a> Compiler<'a> {
                     | LessEqual => self.compile_binary(),
                     And => self.compile_and(),
                     Or => self.compile_or(),
+                    QuestionColon => self.compile_elvis(),
                     _ => Ok(()),
                 },
                 None => {
@@ -84,12 +86,13 @@ impl<'a> Compiler<'a> {
         //   rhs
         // short_circuit:
         let line = self.scanner.prev_unwrap().line;
-        let short_circuit = self.chunk.allocate_new_label();
-        self.chunk
+        let short_circuit = self.scope.curr_chunk().allocate_new_label();
+        self.scope
+            .curr_chunk()
             .push_monkey_patch(ByteCode::JumpF(0), line, short_circuit);
-        self.chunk.push(ByteCode::Pop, line);
+        self.scope.curr_chunk().push(ByteCode::Pop, line);
         self.compile_precedence(Precedence::And)?;
-        self.chunk.push_label(short_circuit);
+        self.scope.curr_chunk().push_label(short_circuit);
         Ok(())
     }
 
@@ -104,17 +107,57 @@ impl<'a> Compiler<'a> {
 
         let line = self.scanner.prev_unwrap().line;
 
-        let rhs = self.chunk.allocate_new_label();
-        let short_circuit = self.chunk.allocate_new_label();
+        let rhs = self.scope.curr_chunk().allocate_new_label();
+        let short_circuit = self.scope.curr_chunk().allocate_new_label();
 
-        self.chunk.push_monkey_patch(ByteCode::JumpF(0), line, rhs);
-        self.chunk
-            .push_monkey_patch(ByteCode::JumpOffset(0), line, short_circuit);
+        self.scope
+            .curr_chunk()
+            .push_monkey_patch(ByteCode::JumpF(0), line, rhs);
+        self.scope
+            .curr_chunk()
+            .push_monkey_patch(ByteCode::JumpRelative(0), line, short_circuit);
 
-        self.chunk.push_label(rhs);
-        self.chunk.push(ByteCode::Pop, line);
+        self.scope.curr_chunk().push_label(rhs);
+        self.scope.curr_chunk().push(ByteCode::Pop, line);
         self.compile_precedence(Precedence::Or)?;
-        self.chunk.push_label(short_circuit);
+        self.scope.curr_chunk().push_label(short_circuit);
+        Ok(())
+    }
+
+    fn compile_elvis(&mut self) -> CompilerResult<()> {
+        use ByteCode::*;
+        //   lhs
+        //   dup
+        //   nil
+        //   eq
+        //   jump_f .short_circuit
+        //   pop
+        //   pop
+        //   rhs
+        //   jump .exit
+        // .short_circuit
+        //   pop
+        // .exit
+        let line = self.scanner.prev_unwrap().line;
+
+        let exit = self.scope.curr_chunk().allocate_new_label();
+        let short_circuit = self.scope.curr_chunk().allocate_new_label();
+
+        self.scope.curr_chunk().push(Dup, line);
+        self.scope.curr_chunk().push(Nil, line);
+        self.scope.curr_chunk().push(Eq, line);
+        self.scope
+            .curr_chunk()
+            .push_monkey_patch(JumpF(0), line, short_circuit);
+        self.scope.curr_chunk().push(Pop, line);
+        self.scope.curr_chunk().push(Pop, line);
+        self.compile_precedence(Precedence::Elvis)?;
+        self.scope
+            .curr_chunk()
+            .push_monkey_patch(JumpRelative(0), line, exit);
+        self.scope.curr_chunk().push_label(short_circuit);
+        self.scope.curr_chunk().push(Pop, line);
+        self.scope.curr_chunk().push_label(exit);
         Ok(())
     }
 
@@ -137,7 +180,7 @@ impl<'a> Compiler<'a> {
 
         loop {
             self.compile_expression()?;
-            self.chunk.push(ByteCode::Add, line);
+            self.scope.curr_chunk().push(ByteCode::Add, line);
             self.scanner.consume_token(
                 TokenType::RBrace,
                 "Expecting '}' after String interpolation",
@@ -145,7 +188,7 @@ impl<'a> Compiler<'a> {
 
             if let Some(s) = self.scanner.advance_if_match(TokenType::Str) {
                 self.emit_constant(&s, s.lexeme.to_owned().into());
-                self.chunk.push(ByteCode::Add, s.line);
+                self.scope.curr_chunk().push(ByteCode::Add, s.line);
                 break;
             }
         }
@@ -156,9 +199,9 @@ impl<'a> Compiler<'a> {
         use TokenType::*;
         let token = self.scanner.prev_unwrap();
         match token.ttype {
-            Nil => self.chunk.push(ByteCode::Nil, token.line),
-            True => self.chunk.push(ByteCode::True, token.line),
-            False => self.chunk.push(ByteCode::False, token.line),
+            Nil => self.scope.curr_chunk().push(ByteCode::Nil, token.line),
+            True => self.scope.curr_chunk().push(ByteCode::True, token.line),
+            False => self.scope.curr_chunk().push(ByteCode::False, token.line),
             _ => unreachable!(),
         }
         Ok(())
@@ -188,9 +231,9 @@ impl<'a> Compiler<'a> {
                 return Err(InterpretError::Compiler);
             }
             self.compile_expression()?;
-            self.chunk.push(setop, name.line);
+            self.scope.curr_chunk().push(setop, name.line);
         } else {
-            self.chunk.push(getop, name.line);
+            self.scope.curr_chunk().push(getop, name.line);
         }
 
         Ok(())
@@ -204,8 +247,8 @@ impl<'a> Compiler<'a> {
         self.compile_precedence(Precedence::Unary)?;
 
         match op.ttype {
-            Minus => self.chunk.push(ByteCode::Negate, op.line),
-            Bang => self.chunk.push(ByteCode::Not, op.line),
+            Minus => self.scope.curr_chunk().push(ByteCode::Negate, op.line),
+            Bang => self.scope.curr_chunk().push(ByteCode::Not, op.line),
             // unreachable
             _ => panic!("Operation {op:?} not handled"),
         }
@@ -218,19 +261,21 @@ impl<'a> Compiler<'a> {
         self.compile_precedence(Precedence::of(op.ttype).next())?;
 
         match op.ttype {
-            Plus => self.chunk.push(ByteCode::Add, op.line),
-            Minus => self.chunk.push(ByteCode::Sub, op.line),
-            Star => self.chunk.push(ByteCode::Mul, op.line),
-            Slash => self.chunk.push(ByteCode::Div, op.line),
+            Plus => self.scope.curr_chunk().push(ByteCode::Add, op.line),
+            Minus => self.scope.curr_chunk().push(ByteCode::Sub, op.line),
+            Star => self.scope.curr_chunk().push(ByteCode::Mul, op.line),
+            Slash => self.scope.curr_chunk().push(ByteCode::Div, op.line),
 
-            EqualEqual | BangEqual => self.chunk.push(ByteCode::Eq, op.line),
-            Greater | GreaterEqual => self.chunk.push(ByteCode::Gt, op.line),
-            Less | LessEqual => self.chunk.push(ByteCode::Lt, op.line),
+            EqualEqual | BangEqual => self.scope.curr_chunk().push(ByteCode::Eq, op.line),
+            Greater | GreaterEqual => self.scope.curr_chunk().push(ByteCode::Gt, op.line),
+            Less | LessEqual => self.scope.curr_chunk().push(ByteCode::Lt, op.line),
             _ => panic!("Operation {op:?} not handled"),
         }
 
         match op.ttype {
-            BangEqual | GreaterEqual | LessEqual => self.chunk.push(ByteCode::Not, op.line),
+            BangEqual | GreaterEqual | LessEqual => {
+                self.scope.curr_chunk().push(ByteCode::Not, op.line)
+            }
             _ => {}
         }
 

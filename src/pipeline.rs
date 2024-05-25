@@ -17,7 +17,7 @@ impl Pipeline {
 
         let compiler = Compiler::new(source);
 
-        VM::interpret(&compiler.compile()?)?;
+        VM::interpret(&compiler.compile()?.chunk)?;
         Ok(())
     }
 }

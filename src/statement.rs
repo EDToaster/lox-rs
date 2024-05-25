@@ -33,7 +33,7 @@ impl<'a> Compiler<'a> {
         if let Some(_) = self.scanner.advance_if_match(TokenType::Equal) {
             self.compile_expression()?;
         } else {
-            self.chunk.push(ByteCode::Nil, tok.line);
+            self.scope.curr_chunk().push(ByteCode::Nil, tok.line);
         }
 
         // Then, allocate global or local variable. We do this after compiling subexpression so that
@@ -70,8 +70,10 @@ impl<'a> Compiler<'a> {
             .consume_token(TokenType::Semi, "Expected ';' after variable declaration")?;
 
         if self.scope.depth == 0 {
-            self.chunk.push(ByteCode::SetGlobal(slot), tok.line);
-            self.chunk.push(ByteCode::Pop, tok.line);
+            self.scope
+                .curr_chunk()
+                .push(ByteCode::SetGlobal(slot), tok.line);
+            self.scope.curr_chunk().push(ByteCode::Pop, tok.line);
         }
 
         Ok(())
@@ -93,13 +95,13 @@ impl<'a> Compiler<'a> {
             self.compile_block()?;
             let num_locals = self.scope.decrement_depth();
             for _ in 0..num_locals {
-                self.chunk.push(ByteCode::Pop, t.line);
+                self.scope.curr_chunk().push(ByteCode::Pop, t.line);
             }
         } else {
             // Must be an expression statement
             self.compile_expression_statement()?;
             let line = self.scanner.prev_unwrap().line;
-            self.chunk.push(ByteCode::Pop, line);
+            self.scope.curr_chunk().push(ByteCode::Pop, line);
         }
 
         Ok(())
@@ -130,7 +132,7 @@ impl<'a> Compiler<'a> {
         self.compile_expression()?;
         self.scanner
             .consume_token(TokenType::Semi, "Expected ';' after value")?;
-        self.chunk.push(ByteCode::Print, line);
+        self.scope.curr_chunk().push(ByteCode::Print, line);
         Ok(())
     }
 
@@ -153,23 +155,25 @@ impl<'a> Compiler<'a> {
             .consume_token(TokenType::RParen, "Expected ')' after condition")?;
 
         // Jump if false
-        let else_label = self.chunk.allocate_new_label();
-        let end_label = self.chunk.allocate_new_label();
+        let else_label = self.scope.curr_chunk().allocate_new_label();
+        let end_label = self.scope.curr_chunk().allocate_new_label();
 
-        self.chunk
+        self.scope
+            .curr_chunk()
             .push_monkey_patch(ByteCode::JumpF(0), line, else_label);
-        self.chunk.push(ByteCode::Pop, line);
+        self.scope.curr_chunk().push(ByteCode::Pop, line);
         self.compile_statement()?;
-        self.chunk
-            .push_monkey_patch(ByteCode::JumpOffset(0), line, end_label);
-        self.chunk.push_label(else_label);
-        self.chunk.push(ByteCode::Pop, line);
+        self.scope
+            .curr_chunk()
+            .push_monkey_patch(ByteCode::JumpRelative(0), line, end_label);
+        self.scope.curr_chunk().push_label(else_label);
+        self.scope.curr_chunk().push(ByteCode::Pop, line);
 
         if let Some(_) = self.scanner.advance_if_match(TokenType::Else) {
             self.compile_statement()?;
         }
 
-        self.chunk.push_label(end_label);
+        self.scope.curr_chunk().push_label(end_label);
 
         Ok(())
     }
@@ -186,27 +190,29 @@ impl<'a> Compiler<'a> {
 
         let line = self.scanner.prev_unwrap().line;
 
-        let cond_label = self.chunk.allocate_new_label();
-        let end_label = self.chunk.allocate_new_label();
+        let cond_label = self.scope.curr_chunk().allocate_new_label();
+        let end_label = self.scope.curr_chunk().allocate_new_label();
 
         self.scanner
             .consume_token(TokenType::LParen, "Expected '(' after while")?;
-        self.chunk.push_label(cond_label);
+        self.scope.curr_chunk().push_label(cond_label);
         self.compile_expression()?;
         self.scanner
             .consume_token(TokenType::RParen, "Expected ')' after condition")?;
 
-        self.chunk
+        self.scope
+            .curr_chunk()
             .push_monkey_patch(ByteCode::JumpF(0), line, end_label);
-        self.chunk.push(ByteCode::Pop, line);
+        self.scope.curr_chunk().push(ByteCode::Pop, line);
 
         // compile body and jump back to cond
         self.compile_statement()?;
-        self.chunk
-            .push_monkey_patch(ByteCode::JumpOffset(0), line, cond_label);
+        self.scope
+            .curr_chunk()
+            .push_monkey_patch(ByteCode::JumpRelative(0), line, cond_label);
 
-        self.chunk.push_label(end_label);
-        self.chunk.push(ByteCode::Pop, line);
+        self.scope.curr_chunk().push_label(end_label);
+        self.scope.curr_chunk().push(ByteCode::Pop, line);
         Ok(())
     }
 
@@ -229,10 +235,10 @@ impl<'a> Compiler<'a> {
 
         let line = self.scanner.prev_unwrap().line;
 
-        let cond_label = self.chunk.allocate_new_label();
-        let post_label = self.chunk.allocate_new_label();
-        let body_label = self.chunk.allocate_new_label();
-        let end_label = self.chunk.allocate_new_label();
+        let cond_label = self.scope.curr_chunk().allocate_new_label();
+        let post_label = self.scope.curr_chunk().allocate_new_label();
+        let body_label = self.scope.curr_chunk().allocate_new_label();
+        let end_label = self.scope.curr_chunk().allocate_new_label();
 
         self.scanner
             .consume_token(TokenType::LParen, "Expected '(' after 'for'")?;
@@ -242,39 +248,43 @@ impl<'a> Compiler<'a> {
             self.compile_decl()?;
         }
         // ';' or cond
-        self.chunk.push_label(cond_label);
+        self.scope.curr_chunk().push_label(cond_label);
         if let Some(t) = self.scanner.advance_if_match(TokenType::Semi) {
-            self.chunk.push(ByteCode::True, t.line);
+            self.scope.curr_chunk().push(ByteCode::True, t.line);
         } else {
             self.compile_expression()?;
             self.scanner
                 .consume_token(TokenType::Semi, "Expected ';' after for condition")?;
         }
-        self.chunk
+        self.scope
+            .curr_chunk()
             .push_monkey_patch(ByteCode::JumpF(0), line, end_label);
-        self.chunk
-            .push_monkey_patch(ByteCode::JumpOffset(0), line, body_label);
+        self.scope
+            .curr_chunk()
+            .push_monkey_patch(ByteCode::JumpRelative(0), line, body_label);
 
         // ')' or post
-        self.chunk.push_label(post_label);
+        self.scope.curr_chunk().push_label(post_label);
         if self.scanner.advance_if_match(TokenType::RParen).is_none() {
             self.compile_expression()?;
-            self.chunk.push(ByteCode::Pop, line);
+            self.scope.curr_chunk().push(ByteCode::Pop, line);
             self.scanner
                 .consume_token(TokenType::RParen, "Expected ')' after for")?;
         }
-        self.chunk
-            .push_monkey_patch(ByteCode::JumpOffset(0), line, cond_label);
+        self.scope
+            .curr_chunk()
+            .push_monkey_patch(ByteCode::JumpRelative(0), line, cond_label);
 
         // Body
-        self.chunk.push_label(body_label);
-        self.chunk.push(ByteCode::Pop, line);
+        self.scope.curr_chunk().push_label(body_label);
+        self.scope.curr_chunk().push(ByteCode::Pop, line);
         self.compile_statement()?;
-        self.chunk
-            .push_monkey_patch(ByteCode::JumpOffset(0), line, post_label);
+        self.scope
+            .curr_chunk()
+            .push_monkey_patch(ByteCode::JumpRelative(0), line, post_label);
 
-        self.chunk.push_label(end_label);
-        self.chunk.push(ByteCode::Pop, line);
+        self.scope.curr_chunk().push_label(end_label);
+        self.scope.curr_chunk().push(ByteCode::Pop, line);
 
         Ok(())
     }
@@ -318,35 +328,39 @@ impl<'a> Compiler<'a> {
         self.scanner
             .consume_token(TokenType::RParen, "Expected ')' after match expression")?;
 
-        let end_label = self.chunk.allocate_new_label();
-        let mut next_branch = self.chunk.allocate_new_label();
+        let end_label = self.scope.curr_chunk().allocate_new_label();
+        let mut next_branch = self.scope.curr_chunk().allocate_new_label();
 
         self.scanner
             .consume_token(TokenType::LBrace, "Expected '{' after match expression")?;
 
         while let None = self.scanner.advance_if_match(TokenType::RBrace) {
-            let this_statement = self.chunk.allocate_new_label();
+            let this_statement = self.scope.curr_chunk().allocate_new_label();
 
-            self.chunk.push_label(next_branch);
-            next_branch = self.chunk.allocate_new_label();
+            self.scope.curr_chunk().push_label(next_branch);
+            next_branch = self.scope.curr_chunk().allocate_new_label();
 
             // match each condition
             loop {
                 if self.scanner.advance_if_match(TokenType::Else).is_some() {
                     // it doesn't matter... it gets popped off the stack
-                    self.chunk.push(ByteCode::Dup, line);
-                    self.chunk
-                        .push_monkey_patch(ByteCode::JumpOffset(0), line, this_statement);
+                    self.scope.curr_chunk().push(ByteCode::Dup, line);
+                    self.scope.curr_chunk().push_monkey_patch(
+                        ByteCode::JumpRelative(0),
+                        line,
+                        this_statement,
+                    );
                     break;
                 }
 
-                self.chunk.push(ByteCode::Dup, line);
+                self.scope.curr_chunk().push(ByteCode::Dup, line);
                 self.compile_expression()?;
-                self.chunk.push(ByteCode::Eq, line);
-                self.chunk.push(ByteCode::Not, line);
-                self.chunk
+                self.scope.curr_chunk().push(ByteCode::Eq, line);
+                self.scope.curr_chunk().push(ByteCode::Not, line);
+                self.scope
+                    .curr_chunk()
                     .push_monkey_patch(ByteCode::JumpF(0), line, this_statement);
-                self.chunk.push(ByteCode::Pop, line);
+                self.scope.curr_chunk().push(ByteCode::Pop, line);
 
                 if self.scanner.advance_if_match(TokenType::Bar).is_none() {
                     break;
@@ -357,19 +371,21 @@ impl<'a> Compiler<'a> {
                 .consume_token(TokenType::FatArrow, "Expected '=>' after match conditions")?;
 
             // Compile branches
-            self.chunk
-                .push_monkey_patch(ByteCode::JumpOffset(0), line, next_branch);
+            self.scope
+                .curr_chunk()
+                .push_monkey_patch(ByteCode::JumpRelative(0), line, next_branch);
 
-            self.chunk.push_label(this_statement);
-            self.chunk.push(ByteCode::Pop, line);
+            self.scope.curr_chunk().push_label(this_statement);
+            self.scope.curr_chunk().push(ByteCode::Pop, line);
             self.compile_statement()?;
-            self.chunk
-                .push_monkey_patch(ByteCode::JumpOffset(0), line, end_label);
+            self.scope
+                .curr_chunk()
+                .push_monkey_patch(ByteCode::JumpRelative(0), line, end_label);
         }
 
-        self.chunk.push_label(end_label);
-        self.chunk.push_label(next_branch);
-        self.chunk.push(ByteCode::Pop, line);
+        self.scope.curr_chunk().push_label(end_label);
+        self.scope.curr_chunk().push_label(next_branch);
+        self.scope.curr_chunk().push(ByteCode::Pop, line);
 
         Ok(())
     }

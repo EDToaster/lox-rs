@@ -41,7 +41,7 @@ impl<'a> VM<'a> {
             match bytecode {
                 Return => break,
                 Constant(idx) => vm.stack.push(chunk.get_constant(idx as u32)),
-                ConstantLong(idx) => vm.stack.push(chunk.get_constant(idx as u32)),
+                ConstantLong(idx) => vm.stack.push(chunk.get_constant(idx)),
                 Nil => vm.stack.push(Value::Nil),
                 True => vm.stack.push(true.into()),
                 False => vm.stack.push(false.into()),
@@ -143,7 +143,7 @@ impl<'a> VM<'a> {
                         iterator.ptr = ((offset as isize) + j_offset as isize) as usize;
                     }
                 },
-                JumpOffset(j_offset) => {
+                JumpRelative(j_offset) => {
                     iterator.ptr = ((offset as isize) + j_offset as isize) as usize;
                 },
             }

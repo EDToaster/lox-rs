@@ -45,7 +45,7 @@ pub enum ByteCode {
 
     // Control Flow
     JumpF(i16) = 0xA0,
-    JumpOffset(i16),
+    JumpRelative(i16),
 }
 
 impl ByteCode {
@@ -210,7 +210,7 @@ impl Chunk {
                 self.push_raw(0xA0);
                 self.push_raw_slice(&offset.to_le_bytes());
             }
-            JumpOffset(offset) => {
+            JumpRelative(offset) => {
                 self.push_raw(0xA1);
                 self.push_raw_slice(&offset.to_le_bytes());
             }
@@ -338,7 +338,7 @@ impl<'a> Iterator for ChunkIterator<'a> {
             }
             0xA1 => {
                 self.ptr += 2;
-                ByteCode::JumpOffset(i16::from_le_bytes(
+                ByteCode::JumpRelative(i16::from_le_bytes(
                     self.inner.bytecode[opcode_ptr + 1..opcode_ptr + 3]
                         .try_into()
                         .unwrap(),

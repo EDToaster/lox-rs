@@ -122,6 +122,7 @@ impl<'a> Iterator for TokenScanner<'a> {
                 '-' => self.make_token(TokenType::Minus),
                 '+' => self.make_token(TokenType::Plus),
                 '|' => self.make_token(TokenType::Bar),
+                '*' => self.make_token(TokenType::Star),
                 '/' => {
                     if self.chars.next_if_match('/') {
                         self.take_until_newline();
@@ -167,7 +168,15 @@ impl<'a> Iterator for TokenScanner<'a> {
                     };
                     self.make_token(t)
                 }
-                '*' => self.make_token(TokenType::Star),
+                '?' => {
+                    let t = if self.chars.next_if_match(':') {
+                        TokenType::QuestionColon
+                    } else {
+                        TokenType::Question
+                    };
+                    self.make_token(t)
+                }
+                ':' => self.make_token(TokenType::Colon),
                 _ => self.make_token(TokenType::Error),
             };
             return Some(tok);
@@ -190,7 +199,7 @@ impl<'a> TokenScanner<'a> {
         TokenScanner {
             chars: scanner,
             force_str: false,
-            state: vec![ScannerState::General],
+            state: vec![],
         }
     }
 
@@ -316,8 +325,13 @@ pub enum TokenType {
     Equal,
     EqualEqual,
     FatArrow,
+
+    Question,
+    Colon,
     // TODO: add support for ?, :, and ?: (true ? 1 : 0) and (nil ?: 0)
     //       where the statements after ?, :, and ?: are lazily evaluated.
+    QuestionColon,
+
     Greater,
     GreaterEqual,
     Less,

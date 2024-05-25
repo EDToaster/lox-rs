@@ -7,6 +7,7 @@ use crate::{
     chunk::Chunk,
     scanner::{Token, TokenScanner, TokenType},
     util::PrevPeekable,
+    value::FuncObj,
     vm::InterpretError,
 };
 
@@ -19,6 +20,7 @@ pub enum Precedence {
     And,
     Equality,
     Comparison,
+    Elvis,
     Term,
     Factor,
     Unary,
@@ -78,6 +80,9 @@ impl Precedence {
             TokenType::Bar => Precedence::None,
             TokenType::FatArrow => Precedence::None,
             TokenType::Match => Precedence::None,
+            TokenType::Question => Precedence::None,
+            TokenType::Colon => Precedence::None,
+            TokenType::QuestionColon => Precedence::Elvis,
         }
     }
 }
@@ -171,8 +176,18 @@ impl<'a> GlobalBindings<'a> {
     }
 }
 
+#[derive(Debug, Default, Clone, Copy)]
+pub enum ChunkType {
+    #[default]
+    Script,
+    Function,
+}
+
 #[derive(Debug, Default)]
 pub struct Scope<'a> {
+    pub chunk_type: ChunkType,
+    pub func: FuncObj,
+
     /// Depths are required to be increasing or equal
     /// Depth can be -1
     // Depth, Token, Mutable
@@ -181,6 +196,10 @@ pub struct Scope<'a> {
 }
 
 impl<'a> Scope<'a> {
+    pub fn curr_chunk(&mut self) -> &mut Chunk {
+        &mut self.func.chunk
+    }
+
     /// Finds the highest depth local
     pub fn find(&self, name: &str) -> Option<&(isize, Token<'a>, bool)> {
         self.locals
@@ -225,11 +244,7 @@ impl<'a> Scope<'a> {
 
 pub struct Compiler<'a> {
     pub scanner: PrevPeekable<ErrorIgnoreTokenScanner<'a>>,
-    // TODO in the future, we will have multiple chunks going at once
-    pub chunk: Chunk,
-
     pub global_bindings: GlobalBindings<'a>,
-
     pub scope: Scope<'a>,
 }
 
@@ -239,14 +254,13 @@ impl<'a> Compiler<'a> {
             inner: TokenScanner::from_source(source),
         });
         Compiler {
-            chunk: Chunk::default(),
             scanner,
             global_bindings: GlobalBindings::default(),
             scope: Scope::default(),
         }
     }
 
-    pub fn compile(mut self) -> CompilerResult<Chunk> {
+    pub fn compile(mut self) -> CompilerResult<FuncObj> {
         // self.compile_expression()?;
 
         while let Some(_) = self.scanner.peek() {
@@ -267,14 +281,19 @@ impl<'a> Compiler<'a> {
         }
 
         // TODO: safe convert
-        self.chunk.global_slots = self.global_bindings.global_slots.keys().count() as u32;
-        self.chunk.resolve_monkey_patches();
-        self.chunk.disassemble();
+        self.scope
+            .curr_chunk()
+            .push(crate::chunk::ByteCode::Return, 0);
+
+        self.scope.curr_chunk().global_slots =
+            self.global_bindings.global_slots.keys().count() as u32;
+        self.scope.curr_chunk().resolve_monkey_patches();
+        self.scope.curr_chunk().disassemble();
         if let Some(t) = self.scanner.peek() {
             report_error(t, "Expected EOF");
             Err(InterpretError::Compiler)
         } else {
-            Ok(self.chunk)
+            Ok(self.scope.func)
         }
 
         // self.check_eof()?;

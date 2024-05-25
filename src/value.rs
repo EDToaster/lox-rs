@@ -12,7 +12,7 @@ pub enum Value {
     Func(Rc<FuncObj>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct FuncObj {
     pub arity: usize,
     pub chunk: Chunk,
